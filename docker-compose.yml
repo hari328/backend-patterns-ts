@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  # LocalStack - Local AWS services
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - "4566:4566"  # LocalStack gateway
+      - "4510-4559:4510-4559"  # External services port range
+    environment:
+      - SERVICES=sqs,s3,dynamodb  # AWS services to run
+      - DEBUG=1
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./localstack-init:/etc/localstack/init/ready.d"
+    networks:
+      - app-network
+
+  # Recommender Service
+  recommender-service:
+    build:
+      context: .
+      dockerfile: apps/recommender-service/Dockerfile
+    container_name: recommender-service
+    ports:
+      - "6000:6000"
+    environment:
+      - NODE_ENV=development
+      - PORT=6000
+      # AWS/LocalStack configuration
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_ENDPOINT=http://localstack:4566
+      - SQS_QUEUE_URL=http://localstack:4566/000000000000/recommendations-queue
+    depends_on:
+      - localstack
+    networks:
+      - app-network
+    volumes:
+      # Mount source for hot reload in development
+      - ./apps/recommender-service/src:/app/src
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
+
