@@ -316,5 +316,146 @@ describe('SQSConsumer - Basic message handling functionality', () => {
       })
     );
   });
+
+  it('should process messages sequentially by default', async () => {
+    // Arrange: Create multiple messages
+    const messages = [
+      {
+        MessageId: 'msg-1',
+        ReceiptHandle: 'receipt-1',
+        Body: JSON.stringify({ id: 1 }),
+      },
+      {
+        MessageId: 'msg-2',
+        ReceiptHandle: 'receipt-2',
+        Body: JSON.stringify({ id: 2 }),
+      },
+      {
+        MessageId: 'msg-3',
+        ReceiptHandle: 'receipt-3',
+        Body: JSON.stringify({ id: 3 }),
+      },
+    ];
+
+    // Track execution order
+    const executionOrder: number[] = [];
+    const processingTimes: number[] = [];
+
+    // Mock handler that takes time and tracks order
+    mockHandler.handle = vi.fn().mockImplementation(async (message) => {
+      const id = JSON.parse(message.Body).id;
+      const startTime = Date.now();
+      executionOrder.push(id);
+
+      // Simulate async work (longer for first message)
+      await new Promise(resolve => setTimeout(resolve, id === 1 ? 50 : 10));
+
+      processingTimes.push(Date.now() - startTime);
+    });
+
+    // Mock ReceiveMessage to return multiple messages
+    mockSend.mockResolvedValueOnce({
+      Messages: messages,
+    });
+
+    // Mock DeleteMessageBatch
+    mockSend.mockResolvedValueOnce({
+      Successful: [{ Id: '0' }, { Id: '1' }, { Id: '2' }],
+      Failed: [],
+    });
+
+    // Mock second ReceiveMessage to return empty (stop polling)
+    mockSend.mockResolvedValue({
+      Messages: [],
+    });
+
+    // Act
+    await consumer.start();
+    await new Promise(resolve => setTimeout(resolve, 200));
+    await consumer.stop();
+
+    // Assert: Messages should be processed in order (sequential)
+    expect(executionOrder).toEqual([1, 2, 3]);
+    expect(mockHandler.handle).toHaveBeenCalledTimes(3);
+  });
+
+  it('should process messages in parallel when processInParallel is true', async () => {
+    // Arrange: Create consumer with parallel processing enabled
+    const parallelConsumer = new SQSConsumer(
+      {
+        sqsConfig: {
+          queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue',
+          maxNumberOfMessages: 10,
+          waitTimeSeconds: 20,
+          visibilityTimeout: 30,
+        },
+        processInParallel: true, // Enable parallel processing
+      },
+      mockHandler
+    );
+
+    const messages = [
+      {
+        MessageId: 'msg-1',
+        ReceiptHandle: 'receipt-1',
+        Body: JSON.stringify({ id: 1 }),
+      },
+      {
+        MessageId: 'msg-2',
+        ReceiptHandle: 'receipt-2',
+        Body: JSON.stringify({ id: 2 }),
+      },
+      {
+        MessageId: 'msg-3',
+        ReceiptHandle: 'receipt-3',
+        Body: JSON.stringify({ id: 3 }),
+      },
+    ];
+
+    // Track when each message starts processing
+    const startTimes: Record<number, number> = {};
+    const endTimes: Record<number, number> = {};
+
+    // Mock handler that tracks timing
+    mockHandler.handle = vi.fn().mockImplementation(async (message) => {
+      const id = JSON.parse(message.Body).id;
+      startTimes[id] = Date.now();
+
+      // Simulate async work
+      await new Promise(resolve => setTimeout(resolve, 30));
+
+      endTimes[id] = Date.now();
+    });
+
+    // Mock ReceiveMessage
+    mockSend.mockResolvedValueOnce({
+      Messages: messages,
+    });
+
+    // Mock DeleteMessageBatch
+    mockSend.mockResolvedValueOnce({
+      Successful: [{ Id: '0' }, { Id: '1' }, { Id: '2' }],
+      Failed: [],
+    });
+
+    // Mock second ReceiveMessage to return empty (stop polling)
+    mockSend.mockResolvedValue({
+      Messages: [],
+    });
+
+    // Act
+    await parallelConsumer.start();
+    await new Promise(resolve => setTimeout(resolve, 200));
+    await parallelConsumer.stop();
+
+    // Assert: All messages should be processed
+    expect(mockHandler.handle).toHaveBeenCalledTimes(3);
+
+    // Assert: Messages should start processing at roughly the same time (parallel)
+    // If parallel, all should start within a small time window
+    const startTimesArray = Object.values(startTimes);
+    const maxStartTimeDiff = Math.max(...startTimesArray) - Math.min(...startTimesArray);
+    expect(maxStartTimeDiff).toBeLessThan(20); // Should start within 20ms of each other
+  });
 });
 

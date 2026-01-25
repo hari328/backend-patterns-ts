@@ -29,6 +29,7 @@ export interface SQSConsumerConfig {
   sqsConfig: SQSConfig;
   sqsClientConfig?: SQSClientConfig; // Optional AWS client config
   pollIntervalMs?: number; // Time to wait between polls if no messages (default: 1000ms)
+  processInParallel?: boolean; // If true, process messages in parallel; if false, process sequentially (default: false)
 }
 
 export class SQSConsumer {
@@ -122,39 +123,20 @@ export class SQSConsumer {
     const retryMessages: Message[] = [];
     const permanentFailureMessages: Message[] = [];
 
-    // Process each message
-    for (const message of messages) {
-      try {
-        // Extract metadata from message attributes
-        const retryCount = parseInt(message.Attributes?.ApproximateReceiveCount || '0', 10);
-        const maxReceiveCount = this.config.sqsConfig.maxReceiveCount;
+    // Check if parallel processing is enabled
+    const processInParallel = this.config.processInParallel ?? false;
 
-        const metadata: MessageMetadata = {
-          retryCount,
-          isLastAttempt: maxReceiveCount !== undefined ? retryCount >= maxReceiveCount : false,
-        };
-
-        await this.handler.handle(message, metadata);
-        successfulMessages.push(message);
-        this.messagesProcessed++;
-      } catch (error) {
-        if (error instanceof RetryException) {
-          // RetryException: Don't delete, let it become visible again
-          console.warn(`[SQSConsumer] 🔄 Retry requested for message ${message.MessageId}: ${error.message}`);
-          retryMessages.push(message);
-          this.messagesFailed++;
-        } else if (error instanceof FailureException) {
-          // FailureException: Delete the message (permanent failure)
-          console.error(`[SQSConsumer] 💀 Permanent failure for message ${message.MessageId}: ${error.message}`);
-          permanentFailureMessages.push(message);
-          this.messagesFailed++;
-        } else {
-          // Unknown error: Don't delete, let it retry
-          console.error('[SQSConsumer] ❌ Failed to process message:', error);
-          console.error('[SQSConsumer] Message ID:', message.MessageId);
-          retryMessages.push(message);
-          this.messagesFailed++;
-        }
+    if (processInParallel) {
+      // Parallel processing: Process all messages concurrently
+      await Promise.all(
+        messages.map(async (message) => {
+          await this.processMessage(message, successfulMessages, retryMessages, permanentFailureMessages);
+        })
+      );
+    } else {
+      // Sequential processing: Process messages one by one
+      for (const message of messages) {
+        await this.processMessage(message, successfulMessages, retryMessages, permanentFailureMessages);
       }
     }
 
@@ -171,6 +153,49 @@ export class SQSConsumer {
     // Retry messages will become visible again after visibility timeout
     if (retryMessages.length > 0) {
       console.warn(`[SQSConsumer] ${retryMessages.length} message(s) will be retried`);
+    }
+  }
+
+  /**
+   * Process a single message
+   */
+  private async processMessage(
+    message: Message,
+    successfulMessages: Message[],
+    retryMessages: Message[],
+    permanentFailureMessages: Message[]
+  ): Promise<void> {
+    try {
+      // Extract metadata from message attributes
+      const retryCount = parseInt(message.Attributes?.ApproximateReceiveCount || '0', 10);
+      const maxReceiveCount = this.config.sqsConfig.maxReceiveCount;
+
+      const metadata: MessageMetadata = {
+        retryCount,
+        isLastAttempt: maxReceiveCount !== undefined ? retryCount >= maxReceiveCount : false,
+      };
+
+      await this.handler.handle(message, metadata);
+      successfulMessages.push(message);
+      this.messagesProcessed++;
+    } catch (error) {
+      if (error instanceof RetryException) {
+        // RetryException: Don't delete, let it become visible again
+        console.warn(`[SQSConsumer] 🔄 Retry requested for message ${message.MessageId}: ${error.message}`);
+        retryMessages.push(message);
+        this.messagesFailed++;
+      } else if (error instanceof FailureException) {
+        // FailureException: Delete the message (permanent failure)
+        console.error(`[SQSConsumer] 💀 Permanent failure for message ${message.MessageId}: ${error.message}`);
+        permanentFailureMessages.push(message);
+        this.messagesFailed++;
+      } else {
+        // Unknown error: Don't delete, let it retry
+        console.error('[SQSConsumer] ❌ Failed to process message:', error);
+        console.error('[SQSConsumer] Message ID:', message.MessageId);
+        retryMessages.push(message);
+        this.messagesFailed++;
+      }
     }
   }
 
