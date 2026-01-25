@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SQSClient } from '@aws-sdk/client-sqs';
 import { SQSConsumer, type MessageHandler } from './sqs-consumer';
 import { RetryException, FailureException } from './exceptions';
+import { InMemoryIdempotencyStore } from './stores/in-memory-idempotency-store';
 
 describe('SQSConsumer - Basic message handling functionality', () => {
   let mockSend: any;
@@ -456,6 +457,181 @@ describe('SQSConsumer - Basic message handling functionality', () => {
     const startTimesArray = Object.values(startTimes);
     const maxStartTimeDiff = Math.max(...startTimesArray) - Math.min(...startTimesArray);
     expect(maxStartTimeDiff).toBeLessThan(20); // Should start within 20ms of each other
+  });
+});
+
+describe('SQSConsumer - Idempotency', () => {
+  let mockSend: any;
+  let mockHandler: MessageHandler;
+  let idempotencyStore: InMemoryIdempotencyStore;
+  let consumer: SQSConsumer;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSend = vi.fn();
+    vi.spyOn(SQSClient.prototype, 'send').mockImplementation(mockSend);
+
+    mockHandler = {
+      handle: vi.fn(),
+    };
+
+    idempotencyStore = new InMemoryIdempotencyStore();
+
+    consumer = new SQSConsumer(
+      {
+        sqsConfig: {
+          queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue',
+          maxNumberOfMessages: 10,
+          waitTimeSeconds: 20,
+          visibilityTimeout: 30,
+        },
+      },
+      mockHandler,
+      {
+        idempotencyStore,
+      }
+    );
+  });
+
+  afterEach(async () => {
+    await consumer.stop();
+    idempotencyStore.clear();
+  });
+
+  it('should process a message the first time', async () => {
+    const mockMessage = {
+      MessageId: 'msg-unique-1',
+      ReceiptHandle: 'receipt-unique-1',
+      Body: JSON.stringify({ data: 'test' }),
+    };
+
+    // Mock ReceiveMessage
+    mockSend.mockResolvedValueOnce({
+      Messages: [mockMessage],
+    });
+
+    // Mock DeleteMessageBatch
+    mockSend.mockResolvedValueOnce({
+      Successful: [{ Id: '0' }],
+      Failed: [],
+    });
+
+    // Mock second ReceiveMessage to return empty (stop polling)
+    mockSend.mockResolvedValue({
+      Messages: [],
+    });
+
+    mockHandler.handle = vi.fn().mockResolvedValue(undefined);
+
+    // Act
+    await consumer.start();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await consumer.stop();
+
+    // Assert: Handler should be called
+    expect(mockHandler.handle).toHaveBeenCalledTimes(1);
+    expect(mockHandler.handle).toHaveBeenCalledWith(
+      mockMessage,
+      expect.objectContaining({
+        retryCount: 0,
+        isLastAttempt: false,
+      })
+    );
+
+    // Assert: Message should be marked as processed
+    expect(await idempotencyStore.hasProcessed('msg-unique-1')).toBe(true);
+  });
+
+  it('should NOT process a duplicate message', async () => {
+    const mockMessage = {
+      MessageId: 'msg-duplicate-1',
+      ReceiptHandle: 'receipt-duplicate-1',
+      Body: JSON.stringify({ data: 'test' }),
+    };
+
+    // Pre-mark message as already processed
+    await idempotencyStore.markProcessed('msg-duplicate-1', 3600);
+
+    // Mock ReceiveMessage
+    mockSend.mockResolvedValueOnce({
+      Messages: [mockMessage],
+    });
+
+    // Mock DeleteMessageBatch (should still delete the duplicate)
+    mockSend.mockResolvedValueOnce({
+      Successful: [{ Id: '0' }],
+      Failed: [],
+    });
+
+    // Mock second ReceiveMessage to return empty (stop polling)
+    mockSend.mockResolvedValue({
+      Messages: [],
+    });
+
+    mockHandler.handle = vi.fn().mockResolvedValue(undefined);
+
+    // Act
+    await consumer.start();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await consumer.stop();
+
+    // Assert: Handler should NOT be called (message already processed)
+    expect(mockHandler.handle).toHaveBeenCalledTimes(0);
+
+    // Assert: Message should still be deleted (to prevent reprocessing)
+    expect(mockSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          QueueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue',
+          Entries: expect.arrayContaining([
+            expect.objectContaining({
+              Id: '0',
+              ReceiptHandle: 'receipt-duplicate-1',
+            }),
+          ]),
+        }),
+      })
+    );
+  });
+
+  it('should process same message ID twice if first one expired', async () => {
+    const mockMessage = {
+      MessageId: 'msg-expired-1',
+      ReceiptHandle: 'receipt-expired-1',
+      Body: JSON.stringify({ data: 'test' }),
+    };
+
+    // Mark message as processed with 1 second TTL
+    await idempotencyStore.markProcessed('msg-expired-1', 1);
+
+    // Wait for TTL to expire
+    await new Promise(resolve => setTimeout(resolve, 1100));
+
+    // Mock ReceiveMessage
+    mockSend.mockResolvedValueOnce({
+      Messages: [mockMessage],
+    });
+
+    // Mock DeleteMessageBatch
+    mockSend.mockResolvedValueOnce({
+      Successful: [{ Id: '0' }],
+      Failed: [],
+    });
+
+    // Mock second ReceiveMessage to return empty (stop polling)
+    mockSend.mockResolvedValue({
+      Messages: [],
+    });
+
+    mockHandler.handle = vi.fn().mockResolvedValue(undefined);
+
+    // Act
+    await consumer.start();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await consumer.stop();
+
+    // Assert: Handler SHOULD be called (TTL expired)
+    expect(mockHandler.handle).toHaveBeenCalledTimes(1);
   });
 });
 

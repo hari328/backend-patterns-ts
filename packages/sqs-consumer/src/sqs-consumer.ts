@@ -7,6 +7,7 @@ import {
   DeleteMessageBatchRequestEntry,
 } from '@aws-sdk/client-sqs';
 import { RetryException, FailureException } from './exceptions';
+import { IdempotencyStore } from './interfaces/idempotency-store';
 
 export interface MessageMetadata {
   retryCount: number;
@@ -32,17 +33,26 @@ export interface SQSConsumerConfig {
   processInParallel?: boolean; // If true, process messages in parallel; if false, process sequentially (default: false)
 }
 
+export interface SQSConsumerOptions {
+  idempotencyStore?: IdempotencyStore;
+  idempotencyTtlSeconds?: number; // Default: 86400 (24 hours)
+}
+
 export class SQSConsumer {
   private sqsClient: SQSClient;
   private config: SQSConsumerConfig;
   private handler: MessageHandler;
+  private idempotencyStore?: IdempotencyStore;
+  private idempotencyTtlSeconds: number;
   private isRunning = false;
   private messagesProcessed = 0;
   private messagesFailed = 0;
 
-  constructor(config: SQSConsumerConfig, handler: MessageHandler) {
+  constructor(config: SQSConsumerConfig, handler: MessageHandler, options?: SQSConsumerOptions) {
     this.config = config;
     this.handler = handler;
+    this.idempotencyStore = options?.idempotencyStore;
+    this.idempotencyTtlSeconds = options?.idempotencyTtlSeconds ?? 86400; // Default 24 hours
     this.sqsClient = new SQSClient(config.sqsClientConfig || {});
   }
 
@@ -165,7 +175,23 @@ export class SQSConsumer {
     retryMessages: Message[],
     permanentFailureMessages: Message[]
   ): Promise<void> {
+    const messageId = message.MessageId || 'unknown';
+
     try {
+      // Check idempotency: Has this message been processed before?
+      if (this.idempotencyStore) {
+        const alreadyProcessed = await this.idempotencyStore.hasProcessed(messageId);
+        if (alreadyProcessed) {
+          console.log(`[SQSConsumer] ⏭️  Message ${messageId} already processed, skipping`);
+          successfulMessages.push(message); // Delete it to prevent reprocessing
+          return;
+        }
+
+        // ✅ Mark as "in-progress" BEFORE processing to prevent race conditions
+        // This prevents duplicate processing if handler is slow
+        await this.idempotencyStore.markProcessed(messageId, this.idempotencyTtlSeconds);
+      }
+
       // Extract metadata from message attributes
       const retryCount = parseInt(message.Attributes?.ApproximateReceiveCount || '0', 10);
       const maxReceiveCount = this.config.sqsConfig.maxReceiveCount;
@@ -175,24 +201,33 @@ export class SQSConsumer {
         isLastAttempt: maxReceiveCount !== undefined ? retryCount >= maxReceiveCount : false,
       };
 
+      // Process the message
       await this.handler.handle(message, metadata);
+
+      // Success! Keep the idempotency record
       successfulMessages.push(message);
       this.messagesProcessed++;
     } catch (error) {
       if (error instanceof RetryException) {
-        // RetryException: Don't delete, let it become visible again
-        console.warn(`[SQSConsumer] 🔄 Retry requested for message ${message.MessageId}: ${error.message}`);
+        // RetryException: Remove from idempotency store so it can retry
+        if (this.idempotencyStore) {
+          await this.idempotencyStore.remove(messageId);
+        }
+        console.warn(`[SQSConsumer] 🔄 Retry requested for message ${messageId}: ${error.message}`);
         retryMessages.push(message);
         this.messagesFailed++;
       } else if (error instanceof FailureException) {
-        // FailureException: Delete the message (permanent failure)
-        console.error(`[SQSConsumer] 💀 Permanent failure for message ${message.MessageId}: ${error.message}`);
+        // FailureException: Keep in idempotency store, delete the message (permanent failure)
+        console.error(`[SQSConsumer] 💀 Permanent failure for message ${messageId}: ${error.message}`);
         permanentFailureMessages.push(message);
         this.messagesFailed++;
       } else {
-        // Unknown error: Don't delete, let it retry
+        // Unknown error: Remove from idempotency store so it can retry
+        if (this.idempotencyStore) {
+          await this.idempotencyStore.remove(messageId);
+        }
         console.error('[SQSConsumer] ❌ Failed to process message:', error);
-        console.error('[SQSConsumer] Message ID:', message.MessageId);
+        console.error('[SQSConsumer] Message ID:', messageId);
         retryMessages.push(message);
         this.messagesFailed++;
       }
