@@ -53,40 +53,11 @@ process.on('SIGTERM', async () => {
 });
 ```
 
-### Double Buffer
-
-```typescript
-import { DoubleBuffer } from '@repo/sqs-consumer';
-
-// Create a flush callback
-const flushCallback = async (data: Map<string, number>) => {
-  console.log('Flushing data to database:', data);
-  // Your database write logic here
-};
-
-// Create and start buffer
-const buffer = new DoubleBuffer<number>(
-  {
-    flushIntervalMs: 10000, // Flush every 10 seconds
-    maxBufferSize: 1000,    // Or when buffer reaches 1000 items
-  },
-  flushCallback
-);
-
-buffer.start();
-
-// Add data
-buffer.set('key1', 100);
-buffer.update('key2', 50, (prev, curr) => prev + curr);
-
-// Graceful shutdown
-await buffer.stop();
-```
-
 ## Features
 
 - **SQS Consumer**: Long-polling SQS consumer with automatic message deletion
-- **Double Buffer**: Non-blocking batch write pattern for high-throughput scenarios
+- **Idempotency**: Prevent duplicate message processing with in-memory or Redis stores
+- **Backoff Strategies**: Exponential and fixed delay retry strategies
 - **TypeScript**: Full type safety with exported types
 - **AWS SDK v3**: Uses latest AWS SDK for JavaScript
 

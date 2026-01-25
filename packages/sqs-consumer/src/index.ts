@@ -19,15 +19,10 @@ export { InMemoryBackoffStore } from './stores/in-memory-backoff-store';
 export { RedisBackoffStore } from './stores/redis-backoff-store';
 export type { TimeUnit } from './stores/in-memory-backoff-store';
 
-// Export Double Buffer
-export { DoubleBuffer } from './double-buffer';
-export type { DoubleBufferConfig, FlushCallback } from './double-buffer';
-
 // Export Config and Validator
 export { createSQSQueueConfig } from './config';
 export type {
   SQSQueueConfig,
-  DoubleBufferConfigType,
   RetryConfigType,
   IdempotencyConfigType,
   DeadLetterQueueConfigType,

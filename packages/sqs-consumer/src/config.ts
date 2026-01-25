@@ -1,14 +1,5 @@
 import { z } from 'zod';
 
-
-export const doubleBufferConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-  flushIntervalMs: z.coerce.number().positive().default(10000), // 10 seconds
-  maxBufferSize: z.coerce.number().positive().optional(),
-});
-
-export type DoubleBufferConfigType = z.infer<typeof doubleBufferConfigSchema>;
-
 export const retryConfigSchema = z.object({
   enabled: z.boolean().default(true),
   strategy: z.enum(['exponential', 'fixed']).default('exponential'),
@@ -45,7 +36,6 @@ export const sqsQueueConfigSchema = z.object({
   processingMode: z.enum(['parallel', 'serial']).default('serial'),
 
   // Optional feature configurations
-  doubleBuffer: doubleBufferConfigSchema.optional(),
   retry: retryConfigSchema.optional(),
   idempotency: idempotencyConfigSchema.optional(),
   deadLetterQueue: deadLetterQueueConfigSchema.optional(),
@@ -70,13 +60,6 @@ export function createSQSQueueConfig(
     waitTimeSeconds: getEnvVar('WAIT_TIME_SECONDS'),
     visibilityTimeout: getEnvVar('VISIBILITY_TIMEOUT'),
     processingMode: getEnvVar('PROCESSING_MODE'),
-
-    // Double buffer config
-    doubleBuffer: getEnvVar('DOUBLE_BUFFER_ENABLED') ? {
-      enabled: getEnvVar('DOUBLE_BUFFER_ENABLED'),
-      flushIntervalMs: getEnvVar('DOUBLE_BUFFER_FLUSH_INTERVAL_MS'),
-      maxBufferSize: getEnvVar('DOUBLE_BUFFER_MAX_SIZE'),
-    } : undefined,
 
     // Retry config
     retry: getEnvVar('RETRY_ENABLED') ? {
