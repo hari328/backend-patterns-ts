@@ -9,11 +9,11 @@ ones are really a over kill.
     * consumer instance remains the same once in code and we attach multiple message handlers to one consumer.
     * consumer always get n messages and process them.
 
-2. sqs consumer should always batch write to database as from above we always get array of messages.
+2. sqs consumer should always batch write to database as from above we always get array of messages. - integration test
 
 3. a service can have multiple sqs consumer running at same time, hence the there will be multiple configs can use sqs_name='posts-stream'.
 
-4. if the message is being retried for the last time we should, inform the handler.
+4. if the message is being retried for the last time we should, inform the handler. - integration test
 
 5. there should be 2 sections of messages one for the actual message and other for the metadata like retry count, last retry time, etc.
 

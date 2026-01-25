@@ -6,7 +6,7 @@
 
 // Export SQS Consumer
 export { SQSConsumer } from './sqs-consumer';
-export type { SQSConsumerConfig, SQSConfig, MessageHandler } from './sqs-consumer';
+export type { SQSConsumerConfig, SQSConfig, MessageHandler, MessageMetadata } from './sqs-consumer';
 
 // Export Double Buffer
 export { DoubleBuffer } from './double-buffer';

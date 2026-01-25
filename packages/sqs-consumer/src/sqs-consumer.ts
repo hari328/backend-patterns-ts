@@ -8,8 +8,13 @@ import {
 } from '@aws-sdk/client-sqs';
 import { RetryException, FailureException } from './exceptions';
 
+export interface MessageMetadata {
+  retryCount: number;
+  isLastAttempt: boolean;
+}
+
 export interface MessageHandler {
-  handle(message: Message): Promise<void>;
+  handle(message: Message, metadata: MessageMetadata): Promise<void>;
 }
 
 export interface SQSConfig {
@@ -17,24 +22,26 @@ export interface SQSConfig {
   maxNumberOfMessages: number;
   waitTimeSeconds: number;
   visibilityTimeout: number;
+  maxReceiveCount?: number; // Optional: Max receive count before message goes to DLQ
 }
 
 export interface SQSConsumerConfig {
   sqsConfig: SQSConfig;
   sqsClientConfig?: SQSClientConfig; // Optional AWS client config
-  handler: MessageHandler;
   pollIntervalMs?: number; // Time to wait between polls if no messages (default: 1000ms)
 }
 
 export class SQSConsumer {
   private sqsClient: SQSClient;
   private config: SQSConsumerConfig;
+  private handler: MessageHandler;
   private isRunning = false;
   private messagesProcessed = 0;
   private messagesFailed = 0;
 
-  constructor(config: SQSConsumerConfig) {
+  constructor(config: SQSConsumerConfig, handler: MessageHandler) {
     this.config = config;
+    this.handler = handler;
     this.sqsClient = new SQSClient(config.sqsClientConfig || {});
   }
 
@@ -118,7 +125,16 @@ export class SQSConsumer {
     // Process each message
     for (const message of messages) {
       try {
-        await this.config.handler.handle(message);
+        // Extract metadata from message attributes
+        const retryCount = parseInt(message.Attributes?.ApproximateReceiveCount || '0', 10);
+        const maxReceiveCount = this.config.sqsConfig.maxReceiveCount;
+
+        const metadata: MessageMetadata = {
+          retryCount,
+          isLastAttempt: maxReceiveCount !== undefined ? retryCount >= maxReceiveCount : false,
+        };
+
+        await this.handler.handle(message, metadata);
         successfulMessages.push(message);
         this.messagesProcessed++;
       } catch (error) {
