@@ -18,6 +18,19 @@ services:
     networks:
       - app-network
 
+  # Redis - In-memory data store for caching and idempotency
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - app-network
+    restart: unless-stopped
+
   # Recommender Service
   recommender-service:
     build:
@@ -47,4 +60,7 @@ services:
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  redis-data:
 

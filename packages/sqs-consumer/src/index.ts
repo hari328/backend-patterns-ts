@@ -11,6 +11,7 @@ export type { SQSConsumerConfig, SQSConsumerOptions, SQSConfig, MessageHandler, 
 // Export Idempotency
 export type { IdempotencyStore } from './interfaces/idempotency-store';
 export { InMemoryIdempotencyStore } from './stores/in-memory-idempotency-store';
+export { RedisIdempotencyStore } from './stores/redis-idempotency-store';
 
 // Export Double Buffer
 export { DoubleBuffer } from './double-buffer';
