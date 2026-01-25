@@ -13,7 +13,8 @@ export const retryConfigSchema = z.object({
   enabled: z.boolean().default(true),
   strategy: z.enum(['exponential', 'fixed']).default('exponential'),
   maxRetries: z.coerce.number().min(0).default(3),
-  baseDelayMs: z.coerce.number().positive().default(1000), // 1 second
+  baseDelay: z.coerce.number().positive().default(1),
+  baseDelayUnit: z.enum(['ms', 'sec', 'min', 'hour']).default('sec'),
 });
 
 export type RetryConfigType = z.infer<typeof retryConfigSchema>;
@@ -82,7 +83,8 @@ export function createSQSQueueConfig(
       enabled: getEnvVar('RETRY_ENABLED'),
       strategy: getEnvVar('RETRY_STRATEGY'),
       maxRetries: getEnvVar('RETRY_MAX_RETRIES'),
-      baseDelayMs: getEnvVar('RETRY_BASE_DELAY_MS'),
+      baseDelay: getEnvVar('RETRY_BASE_DELAY'),
+      baseDelayUnit: getEnvVar('RETRY_BASE_DELAY_UNIT'),
     } : undefined,
 
     // Idempotency config

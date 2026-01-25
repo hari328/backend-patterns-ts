@@ -8,6 +8,8 @@ import {
 } from '@aws-sdk/client-sqs';
 import { RetryException, FailureException } from './exceptions';
 import { IdempotencyStore } from './interfaces/idempotency-store';
+import { BackoffStore, RetryStrategy } from './interfaces/backoff-store';
+import { TimeUnit } from './stores/in-memory-backoff-store';
 
 export interface MessageMetadata {
   retryCount: number;
@@ -36,6 +38,10 @@ export interface SQSConsumerConfig {
 export interface SQSConsumerOptions {
   idempotencyStore?: IdempotencyStore;
   idempotencyTtlSeconds?: number; // Default: 86400 (24 hours)
+  backoffStore?: BackoffStore;
+  backoffBaseDelay?: number; // Default: 1
+  backoffBaseDelayUnit?: TimeUnit; // Default: 'sec'
+  retryStrategy?: RetryStrategy; // Default: 'exponential'
 }
 
 export class SQSConsumer {
@@ -44,6 +50,10 @@ export class SQSConsumer {
   private handler: MessageHandler;
   private idempotencyStore?: IdempotencyStore;
   private idempotencyTtlSeconds: number;
+  private backoffStore?: BackoffStore;
+  private backoffBaseDelay: number;
+  private backoffBaseDelayUnit: TimeUnit;
+  private retryStrategy: RetryStrategy;
   private isRunning = false;
   private messagesProcessed = 0;
   private messagesFailed = 0;
@@ -53,7 +63,24 @@ export class SQSConsumer {
     this.handler = handler;
     this.idempotencyStore = options?.idempotencyStore;
     this.idempotencyTtlSeconds = options?.idempotencyTtlSeconds ?? 86400; // Default 24 hours
+    this.backoffStore = options?.backoffStore;
+    this.backoffBaseDelay = options?.backoffBaseDelay ?? 1;
+    this.backoffBaseDelayUnit = options?.backoffBaseDelayUnit ?? 'sec';
+    this.retryStrategy = options?.retryStrategy ?? 'exponential';
     this.sqsClient = new SQSClient(config.sqsClientConfig || {});
+  }
+
+  private toMilliseconds(value: number, unit: TimeUnit): number {
+    switch (unit) {
+      case 'ms':
+        return value;
+      case 'sec':
+        return value * 1000;
+      case 'min':
+        return value * 60 * 1000;
+      case 'hour':
+        return value * 60 * 60 * 1000;
+    }
   }
 
   /**
@@ -178,6 +205,16 @@ export class SQSConsumer {
     const messageId = message.MessageId || 'unknown';
 
     try {
+      // Check backoff: Is this message in backoff period?
+      if (this.backoffStore) {
+        const canProcess = await this.backoffStore.canProcess(messageId);
+        if (!canProcess) {
+          console.log(`[SQSConsumer] ⏸️  Message ${messageId} in backoff period, skipping`);
+          // Don't delete - let it become visible again after visibility timeout
+          return;
+        }
+      }
+
       // Check idempotency: Has this message been processed before?
       if (this.idempotencyStore) {
         const alreadyProcessed = await this.idempotencyStore.hasProcessed(messageId);
@@ -204,14 +241,24 @@ export class SQSConsumer {
       // Process the message
       await this.handler.handle(message, metadata);
 
-      // Success! Keep the idempotency record
+      // Success! Clear backoff and keep idempotency record
+      if (this.backoffStore) {
+        await this.backoffStore.clear(messageId);
+      }
       successfulMessages.push(message);
       this.messagesProcessed++;
     } catch (error) {
       if (error instanceof RetryException) {
-        // RetryException: Remove from idempotency store so it can retry
+        // RetryException: Remove from idempotency store and record backoff
         if (this.idempotencyStore) {
           await this.idempotencyStore.remove(messageId);
+        }
+        if (this.backoffStore) {
+          await this.backoffStore.recordFailure(
+            messageId,
+            this.toMilliseconds(this.backoffBaseDelay, this.backoffBaseDelayUnit),
+            this.retryStrategy
+          );
         }
         console.warn(`[SQSConsumer] 🔄 Retry requested for message ${messageId}: ${error.message}`);
         retryMessages.push(message);
@@ -222,9 +269,16 @@ export class SQSConsumer {
         permanentFailureMessages.push(message);
         this.messagesFailed++;
       } else {
-        // Unknown error: Remove from idempotency store so it can retry
+        // Unknown error: Remove from idempotency store and record backoff
         if (this.idempotencyStore) {
           await this.idempotencyStore.remove(messageId);
+        }
+        if (this.backoffStore) {
+          await this.backoffStore.recordFailure(
+            messageId,
+            this.toMilliseconds(this.backoffBaseDelay, this.backoffBaseDelayUnit),
+            this.retryStrategy
+          );
         }
         console.error('[SQSConsumer] ❌ Failed to process message:', error);
         console.error('[SQSConsumer] Message ID:', messageId);

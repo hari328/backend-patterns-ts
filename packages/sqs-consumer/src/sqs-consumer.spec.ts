@@ -3,6 +3,7 @@ import { SQSClient } from '@aws-sdk/client-sqs';
 import { SQSConsumer, type MessageHandler } from './sqs-consumer';
 import { RetryException, FailureException } from './exceptions';
 import { InMemoryIdempotencyStore } from './stores/in-memory-idempotency-store';
+import { InMemoryBackoffStore } from './stores/in-memory-backoff-store';
 
 describe('SQSConsumer - Basic message handling functionality', () => {
   let mockSend: any;
@@ -632,6 +633,263 @@ describe('SQSConsumer - Idempotency', () => {
 
     // Assert: Handler SHOULD be called (TTL expired)
     expect(mockHandler.handle).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('SQSConsumer - Exponential Backoff', () => {
+  let mockSend: any;
+  let mockHandler: MessageHandler;
+  let consumer: SQSConsumer;
+  let backoffStore: InMemoryBackoffStore;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSend = vi.fn();
+    vi.spyOn(SQSClient.prototype, 'send').mockImplementation(mockSend);
+    mockHandler = { handle: vi.fn() };
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('should NOT process message if in backoff period', async () => {
+    // Arrange
+    backoffStore = new InMemoryBackoffStore();
+
+    const mockMessage = {
+      MessageId: 'msg-backoff-1',
+      ReceiptHandle: 'receipt-backoff-1',
+      Body: JSON.stringify({ test: 'data' }),
+      Attributes: { ApproximateReceiveCount: '2' },
+    };
+
+    // Record a failure with 5 second backoff
+    await backoffStore.recordFailure('msg-backoff-1', 5000);
+
+    consumer = new SQSConsumer(
+      {
+        sqsConfig: {
+          queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue',
+          maxNumberOfMessages: 10,
+          waitTimeSeconds: 20,
+          visibilityTimeout: 30,
+        },
+      },
+      mockHandler,
+      { backoffStore }
+    );
+
+    // Mock ReceiveMessage to return the message
+    mockSend.mockResolvedValueOnce({
+      Messages: [mockMessage],
+    });
+
+    // Mock second ReceiveMessage to return empty (stop polling)
+    mockSend.mockResolvedValue({
+      Messages: [],
+    });
+
+    // Act
+    await consumer.start();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await consumer.stop();
+
+    // Assert: Handler should NOT be called (message in backoff)
+    expect(mockHandler.handle).not.toHaveBeenCalled();
+
+    // Message should NOT be deleted (still in backoff)
+    const deleteCall = mockSend.mock.calls.find((call: any) =>
+      call[0].constructor.name === 'DeleteMessageBatchCommand'
+    );
+    expect(deleteCall).toBeUndefined();
+  });
+
+  it('should process message after backoff period expires', async () => {
+    // Arrange
+    backoffStore = new InMemoryBackoffStore();
+
+    const mockMessage = {
+      MessageId: 'msg-backoff-2',
+      ReceiptHandle: 'receipt-backoff-2',
+      Body: JSON.stringify({ test: 'data' }),
+      Attributes: { ApproximateReceiveCount: '2' },
+    };
+
+    // Record a failure with very short backoff (10ms)
+    await backoffStore.recordFailure('msg-backoff-2', 10);
+
+    consumer = new SQSConsumer(
+      {
+        sqsConfig: {
+          queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue',
+          maxNumberOfMessages: 10,
+          waitTimeSeconds: 20,
+          visibilityTimeout: 30,
+        },
+      },
+      mockHandler,
+      { backoffStore }
+    );
+
+    // Wait for backoff to expire
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // Mock ReceiveMessage to return the message
+    mockSend.mockResolvedValueOnce({
+      Messages: [mockMessage],
+    });
+
+    // Mock DeleteMessageBatch
+    mockSend.mockResolvedValueOnce({
+      Successful: [{ Id: '0' }],
+    });
+
+    // Mock second ReceiveMessage to return empty (stop polling)
+    mockSend.mockResolvedValue({
+      Messages: [],
+    });
+
+    mockHandler.handle = vi.fn().mockResolvedValue(undefined);
+
+    // Act
+    await consumer.start();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await consumer.stop();
+
+    // Assert: Handler SHOULD be called (backoff expired)
+    expect(mockHandler.handle).toHaveBeenCalledTimes(1);
+
+    // Backoff should be cleared after successful processing
+    const retryCount = await backoffStore.getRetryCount('msg-backoff-2');
+    expect(retryCount).toBe(0);
+  });
+
+  it('should record failure and increase backoff exponentially', async () => {
+    // Arrange
+    backoffStore = new InMemoryBackoffStore();
+
+    const mockMessage = {
+      MessageId: 'msg-backoff-3',
+      ReceiptHandle: 'receipt-backoff-3',
+      Body: JSON.stringify({ test: 'data' }),
+      Attributes: { ApproximateReceiveCount: '1' },
+    };
+
+    consumer = new SQSConsumer(
+      {
+        sqsConfig: {
+          queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue',
+          maxNumberOfMessages: 10,
+          waitTimeSeconds: 20,
+          visibilityTimeout: 30,
+        },
+      },
+      mockHandler,
+      { backoffStore }
+    );
+
+    // Mock ReceiveMessage to return the message
+    mockSend.mockResolvedValueOnce({
+      Messages: [mockMessage],
+    });
+
+    // Mock second ReceiveMessage to return empty (stop polling)
+    mockSend.mockResolvedValue({
+      Messages: [],
+    });
+
+    // Handler throws RetryException
+    mockHandler.handle = vi.fn().mockRejectedValue(new RetryException('Temporary error'));
+
+    // Act
+    await consumer.start();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await consumer.stop();
+
+    // Assert: Backoff should be recorded
+    const retryCount = await backoffStore.getRetryCount('msg-backoff-3');
+    expect(retryCount).toBe(1);
+
+    const canProcess = await backoffStore.canProcess('msg-backoff-3');
+    expect(canProcess).toBe(false); // Should be in backoff
+  });
+
+  it('should use fixed delay strategy when configured', async () => {
+    // Arrange
+    backoffStore = new InMemoryBackoffStore();
+
+    const mockMessage = {
+      MessageId: 'msg-fixed-1',
+      ReceiptHandle: 'receipt-fixed-1',
+      Body: JSON.stringify({ test: 'data' }),
+      Attributes: { ApproximateReceiveCount: '1' },
+    };
+
+    consumer = new SQSConsumer(
+      {
+        sqsConfig: {
+          queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue',
+          maxNumberOfMessages: 10,
+          waitTimeSeconds: 20,
+          visibilityTimeout: 30,
+        },
+      },
+      mockHandler,
+      {
+        backoffStore,
+        backoffBaseDelay: 100,
+        backoffBaseDelayUnit: 'ms',
+        retryStrategy: 'fixed'
+      }
+    );
+
+    // Mock ReceiveMessage to return the message
+    mockSend.mockResolvedValueOnce({
+      Messages: [mockMessage],
+    });
+
+    // Mock second ReceiveMessage to return empty (stop polling)
+    mockSend.mockResolvedValue({
+      Messages: [],
+    });
+
+    // Handler throws RetryException
+    mockHandler.handle = vi.fn().mockRejectedValue(new RetryException('Temporary error'));
+
+    // Act: First failure
+    await consumer.start();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    await consumer.stop();
+
+    // Assert: Backoff should be recorded
+    let retryCount = await backoffStore.getRetryCount('msg-fixed-1');
+    expect(retryCount).toBe(1);
+
+    // Get the first failure time
+    const firstFailureTime = backoffStore.getLastFailureTime('msg-fixed-1');
+    expect(firstFailureTime).not.toBeNull();
+
+    // Simulate second failure (to test fixed delay doesn't grow)
+    await backoffStore.recordFailure('msg-fixed-1', 100, 'fixed');
+    retryCount = await backoffStore.getRetryCount('msg-fixed-1');
+    expect(retryCount).toBe(2);
+
+    // Simulate third failure
+    await backoffStore.recordFailure('msg-fixed-1', 100, 'fixed');
+    retryCount = await backoffStore.getRetryCount('msg-fixed-1');
+    expect(retryCount).toBe(3);
+
+    // With fixed strategy, delay should always be 100ms regardless of retry count
+    // Wait 50ms - should still be in backoff
+    await new Promise(resolve => setTimeout(resolve, 50));
+    let canProcess = await backoffStore.canProcess('msg-fixed-1');
+    expect(canProcess).toBe(false);
+
+    // Wait another 60ms (total 110ms) - should be able to process
+    await new Promise(resolve => setTimeout(resolve, 60));
+    canProcess = await backoffStore.canProcess('msg-fixed-1');
+    expect(canProcess).toBe(true);
   });
 });
 

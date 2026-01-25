@@ -13,6 +13,12 @@ export type { IdempotencyStore } from './interfaces/idempotency-store';
 export { InMemoryIdempotencyStore } from './stores/in-memory-idempotency-store';
 export { RedisIdempotencyStore } from './stores/redis-idempotency-store';
 
+// Export Backoff
+export type { BackoffStore, RetryStrategy } from './interfaces/backoff-store';
+export { InMemoryBackoffStore } from './stores/in-memory-backoff-store';
+export { RedisBackoffStore } from './stores/redis-backoff-store';
+export type { TimeUnit } from './stores/in-memory-backoff-store';
+
 // Export Double Buffer
 export { DoubleBuffer } from './double-buffer';
 export type { DoubleBufferConfig, FlushCallback } from './double-buffer';
