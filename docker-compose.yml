@@ -52,6 +52,53 @@ services:
       - app-network
     restart: unless-stopped
 
+  # Database Init (runs migrations and seeds)
+  db-init:
+    image: node:20-alpine
+    container_name: db-init
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/social_media_db
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=social_media_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+    command: sh -c "apk add --no-cache postgresql-client && npm install && sh scripts/init-db.sh"
+    restart: "no"
+
+  # Posts Service
+  posts-service:
+    build:
+      context: .
+      dockerfile: apps/posts-service/Dockerfile
+    container_name: posts-service
+    ports:
+      - "6001:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=social_media_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    networks:
+      - app-network
+    volumes:
+      - ./apps/posts-service/src:/app/src
+    restart: unless-stopped
+
   # Recommender Service
   recommender-service:
     build:

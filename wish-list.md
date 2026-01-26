@@ -12,3 +12,4 @@
 
 4. I want to add something like uber also to this.
 
+5. fix the repo tests to run on pg-mem db or some other in memory db, we are facing issue bcoz pg-mem don't have typeParser

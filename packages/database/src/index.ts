@@ -9,3 +9,14 @@ export { postsHashtags } from './schema/posts-hashtags';
 export { comments } from './schema/comments';
 export { likes } from './schema/likes';
 
+// Export Snowflake ID utilities
+export {
+  generateSnowflakeId,
+  decodeSnowflakeId,
+  getWorkerIdFromSnowflake,
+  getSequenceFromSnowflake,
+} from './utils/snowflake';
+
+// Export test utilities
+export { setupTestDb } from './test-utils/setup-test-db';
+

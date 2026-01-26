@@ -5,7 +5,9 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./dist/index.js",
+    "./schema": "./dist/schema/index.js",
+    "./utils/snowflake": "./dist/utils/snowflake.js"
   },
   "scripts": {
     "build": "tsc",
@@ -25,6 +27,8 @@
   "devDependencies": {
     "@repo/typescript-config": "*",
     "drizzle-kit": "^0.28.1",
+    "pg": "^8.17.2",
+    "pg-mem": "^3.0.5",
     "tsx": "^4.19.2",
     "typescript": "^5.9.2"
   }

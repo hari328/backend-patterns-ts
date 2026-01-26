@@ -190,8 +190,10 @@ async function seed() {
         ...userData,
       }).returning();
 
-      insertedUsers.push(user[0]);
-      console.log(`   ✓ Created user: ${userData.username} (${user[0].id})`);
+      if (user[0]) {
+        insertedUsers.push(user[0]);
+        console.log(`   ✓ Created user: ${userData.username} (${user[0].id})`);
+      }
     }
 
     console.log(`\n✅ Successfully seeded ${insertedUsers.length} users!\n`);
@@ -199,8 +201,8 @@ async function seed() {
     // Display summary
     console.log('📊 Summary:');
     console.log(`   Total users: ${insertedUsers.length}`);
-    console.log(`   Verified users: ${insertedUsers.filter(u => u.isVerified).length}`);
-    console.log(`   Regular users: ${insertedUsers.filter(u => !u.isVerified).length}`);
+    console.log(`   Verified users: ${insertedUsers.filter(u => u?.isVerified).length}`);
+    console.log(`   Regular users: ${insertedUsers.filter(u => !u?.isVerified).length}`);
 
     console.log('\n🎉 Seeding completed successfully!');
     process.exit(0);
