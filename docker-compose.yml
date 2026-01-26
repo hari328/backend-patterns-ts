@@ -18,6 +18,27 @@ services:
     networks:
       - app-network
 
+  # PostgreSQL - Main database for social media app
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    ports:
+      - "7732:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=social_media_db
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Redis - In-memory data store for caching and idempotency
   redis:
     image: redis:7-alpine
@@ -62,5 +83,6 @@ networks:
     driver: bridge
 
 volumes:
+  postgres-data:
   redis-data:
 
