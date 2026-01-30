@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PostsService } from './posts.service';
 import { PostsRepository } from '../repositories/posts.repository';
+import { PostsSQSPublisher } from './sqs-publisher';
 import { User, PostResponse } from '../types/posts.types';
 
 describe('PostsService', () => {
@@ -11,6 +12,9 @@ describe('PostsService', () => {
     findPostById: ReturnType<typeof vi.fn>;
     findPostsByUserId: ReturnType<typeof vi.fn>;
   };
+  let mockSQSPublisher: {
+    publishPostCreated: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     mockRepository = {
@@ -20,11 +24,18 @@ describe('PostsService', () => {
       findPostsByUserId: vi.fn(),
     };
 
-    service = new PostsService(mockRepository as unknown as PostsRepository);
+    mockSQSPublisher = {
+      publishPostCreated: vi.fn(),
+    };
+
+    service = new PostsService(
+      mockRepository as unknown as PostsRepository,
+      mockSQSPublisher as unknown as PostsSQSPublisher
+    );
   });
 
   describe('createPost', () => {
-    it('should create post when user exists', async () => {
+    it('should create post and publish SQS message when user exists', async () => {
       const userId = '274137326815285248';
       const caption = 'My first post!';
 
@@ -49,6 +60,7 @@ describe('PostsService', () => {
 
       mockRepository.findUserById.mockResolvedValue(mockUser);
       mockRepository.createPost.mockResolvedValue(mockPost);
+      mockSQSPublisher.publishPostCreated.mockResolvedValue('mock-message-id-123');
 
       const result = await service.createPost(userId, caption);
 
@@ -58,6 +70,10 @@ describe('PostsService', () => {
         userId,
         caption,
       });
+      expect(mockSQSPublisher.publishPostCreated).toHaveBeenCalledWith(
+        expect.any(String),
+        userId
+      );
       expect(result).toEqual(mockPost);
     });
 
@@ -73,6 +89,52 @@ describe('PostsService', () => {
 
       expect(mockRepository.findUserById).toHaveBeenCalledWith(userId);
       expect(mockRepository.createPost).not.toHaveBeenCalled();
+      expect(mockSQSPublisher.publishPostCreated).not.toHaveBeenCalled();
+    });
+
+    it('should create post successfully even if SQS publish fails', async () => {
+      const userId = '274137326815285248';
+      const caption = 'My first post!';
+
+      const mockUser: User = {
+        id: userId,
+        username: 'johndoe',
+        email: 'john@example.com',
+        fullName: 'John Doe',
+        isVerified: true,
+      };
+
+      const mockPost: PostResponse = {
+        id: '274137326815285249',
+        userId,
+        caption,
+        likesCount: 0,
+        commentsCount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        deletedAt: null,
+      };
+
+      mockRepository.findUserById.mockResolvedValue(mockUser);
+      mockRepository.createPost.mockResolvedValue(mockPost);
+      mockSQSPublisher.publishPostCreated.mockRejectedValue(
+        new Error('SQS service unavailable')
+      );
+
+      // Spy on console.error to verify error logging
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const result = await service.createPost(userId, caption);
+
+      expect(mockRepository.createPost).toHaveBeenCalled();
+      expect(mockSQSPublisher.publishPostCreated).toHaveBeenCalled();
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Failed to publish POST_CREATED event to SQS:',
+        expect.any(Error)
+      );
+      expect(result).toEqual(mockPost);
+
+      consoleErrorSpy.mockRestore();
     });
   });
 
