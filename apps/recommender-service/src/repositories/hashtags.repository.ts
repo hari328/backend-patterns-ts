@@ -1,5 +1,5 @@
 import { db as defaultDb, posts, hashtags, postsHashtags, generateSnowflakeId } from '@repo/database';
-import { eq, and, isNull, sql } from 'drizzle-orm';
+import { eq, and, isNull, sql, desc } from 'drizzle-orm';
 
 export interface HashtagData {
   name: string;
@@ -98,6 +98,20 @@ export class HashtagsRepository {
       .insert(postsHashtags)
       .values(values)
       .onConflictDoNothing();
+  }
+
+  async findTopHashtags(limit: number): Promise<Array<{ id: string; name: string; usageCount: number }>> {
+    const results = await this.db
+      .select({
+        id: hashtags.id,
+        name: hashtags.name,
+        usageCount: hashtags.usageCount,
+      })
+      .from(hashtags)
+      .orderBy(desc(hashtags.usageCount))
+      .limit(limit);
+
+    return results;
   }
 }
 

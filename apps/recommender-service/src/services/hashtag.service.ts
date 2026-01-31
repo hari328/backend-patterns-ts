@@ -80,5 +80,15 @@ export class HashtagService {
 
     console.log(`[HashtagService] Batch processed ${hashtagCounts.size} unique hashtags from ${postHashtagMapping.length} post-hashtag relationships`);
   }
+
+  async getTopHashtags(limit: number = 5): Promise<Array<{ id: string; name: string; usageCount: number }>> {
+    if (limit <= 0) {
+      throw new Error('Limit must be greater than 0');
+    }
+
+    const topHashtags = await this.hashtagRepository.findTopHashtags(limit);
+
+    return topHashtags;
+  }
 }
 

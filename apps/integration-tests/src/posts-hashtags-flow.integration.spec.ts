@@ -88,7 +88,78 @@ describe('Posts → Hashtags Integration Flow', () => {
     );
     expect(post2Hashtags).toHaveLength(2);
 
-    console.log('✅ Integration test passed!');
+    // Test the GET /api/hashtags/top endpoint
+    console.log('Testing GET /api/hashtags/top endpoint...');
+
+    // Test 1: Get top 5 hashtags (default)
+    const topHashtagsResponse = await request('http://localhost:6000')
+      .get('/api/hashtags/top')
+      .expect(200);
+
+    console.log(`📊 API Response - Count: ${topHashtagsResponse.body.count}`);
+    console.log(`   Hashtags: ${topHashtagsResponse.body.hashtags.map((h: any) => `${h.name}(${h.usageCount})`).join(', ')}`);
+
+    expect(topHashtagsResponse.body).toHaveProperty('hashtags');
+    expect(topHashtagsResponse.body).toHaveProperty('count');
+    expect(topHashtagsResponse.body.hashtags).toHaveLength(3);
+    expect(topHashtagsResponse.body.count).toBe(3);
+
+    // Verify hashtags are ordered by usageCount descending
+    const apiHashtags = topHashtagsResponse.body.hashtags;
+    expect(apiHashtags[0].name).toBe('nodejs');
+    expect(apiHashtags[0].usageCount).toBe(2);
+
+    // The other two hashtags (docker and typescript) both have usageCount 1
+    const remainingHashtags = apiHashtags.slice(1);
+    expect(remainingHashtags).toHaveLength(2);
+    remainingHashtags.forEach((h: any) => {
+      expect(h.usageCount).toBe(1);
+      expect(['docker', 'typescript']).toContain(h.name);
+    });
+
+    // Verify all hashtags have required fields
+    apiHashtags.forEach((h: any) => {
+      expect(h).toHaveProperty('id');
+      expect(h).toHaveProperty('name');
+      expect(h).toHaveProperty('usageCount');
+      expect(typeof h.id).toBe('string');
+      expect(typeof h.name).toBe('string');
+      expect(typeof h.usageCount).toBe('number');
+    });
+
+    // Test 2: Get top 2 hashtags (custom limit)
+    const top2Response = await request('http://localhost:6000')
+      .get('/api/hashtags/top?limit=2')
+      .expect(200);
+
+    console.log(`📊 API Response (limit=2) - Count: ${top2Response.body.count}`);
+    expect(top2Response.body.hashtags).toHaveLength(2);
+    expect(top2Response.body.count).toBe(2);
+    expect(top2Response.body.hashtags[0].name).toBe('nodejs');
+
+    // Test 3: Get top 1 hashtag
+    const top1Response = await request('http://localhost:6000')
+      .get('/api/hashtags/top?limit=1')
+      .expect(200);
+
+    expect(top1Response.body.hashtags).toHaveLength(1);
+    expect(top1Response.body.count).toBe(1);
+    expect(top1Response.body.hashtags[0].name).toBe('nodejs');
+    expect(top1Response.body.hashtags[0].usageCount).toBe(2);
+
+    // Test 4: Verify database state matches API response
+    const dbHashtagsOrdered = allHashtags.sort((a, b) => b.usageCount - a.usageCount);
+    expect(apiHashtags.length).toBe(dbHashtagsOrdered.length);
+
+    // Verify each API hashtag exists in the database with matching data
+    apiHashtags.forEach((apiHashtag: any) => {
+      const dbHashtag = allHashtags.find(h => h.id === apiHashtag.id);
+      expect(dbHashtag).toBeDefined();
+      expect(apiHashtag.name).toBe(dbHashtag!.name);
+      expect(apiHashtag.usageCount).toBe(dbHashtag!.usageCount);
+    });
+
+    console.log('✅ Integration test passed (including API endpoint tests)!');
   });
 });
 
