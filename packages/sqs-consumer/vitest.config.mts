@@ -10,6 +10,12 @@ export default defineConfig({
 
     // Enable globals so we don't need to import describe, it, expect
     globals: true,
+
+    // Coverage configuration
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+    },
   },
   resolve: {
     extensions: ['.ts', '.js'],
