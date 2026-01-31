@@ -81,18 +81,23 @@ services:
       dockerfile: apps/posts-service/Dockerfile
     container_name: posts-service
     ports:
-      - "6001:3000"
+      - "6001:6001"
     environment:
       - NODE_ENV=development
-      - PORT=3000
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=social_media_db
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
+      - PORT=6001
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/social_media_db
+      # AWS/LocalStack configuration
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_ENDPOINT=http://localstack:4566
+      # SQS Queue URL
+      - SQS_POSTS_STREAM_QUEUE_URL=http://localstack:4566/000000000000/post-stream
     depends_on:
       db-init:
         condition: service_completed_successfully
+      localstack:
+        condition: service_started
     networks:
       - app-network
     volumes:
@@ -109,15 +114,24 @@ services:
       - "6000:6000"
     environment:
       - NODE_ENV=development
+      - APP_STAGE=dev
       - PORT=6000
+      # Database configuration
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=social_media_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
       # AWS/LocalStack configuration
       - AWS_REGION=us-east-1
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_ENDPOINT=http://localstack:4566
-      - SQS_QUEUE_URL=http://localstack:4566/000000000000/recommendations-queue
+      # SQS Posts Stream Queue URL
+      - SQS_POSTS_STREAM_QUEUE_URL=http://localstack:4566/000000000000/post-stream
     depends_on:
       - localstack
+      - postgres
     networks:
       - app-network
     volumes:

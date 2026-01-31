@@ -25,21 +25,31 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Copy package files
-COPY apps/recommender-service/package*.json ./
+# Copy root package files for workspace setup
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/turbo.json ./
 
-# Install only production dependencies
+# Copy built workspace packages
+COPY --from=builder /app/packages ./packages
+
+# Copy the app package.json
+COPY --from=builder /app/apps/recommender-service/package*.json ./apps/recommender-service/
+
+# Install all dependencies (including workspace packages)
 RUN npm install --production
 
 # Copy built files from builder
-COPY --from=builder /app/apps/recommender-service/dist ./dist
+COPY --from=builder /app/apps/recommender-service/dist ./apps/recommender-service/dist
+
+# Set working directory to the app
+WORKDIR /app/apps/recommender-service
 
 # Expose port
-EXPOSE 7000
+EXPOSE 6000
 
 # Set environment variables
 ENV NODE_ENV=production
-ENV PORT=7000
+ENV PORT=6000
 
 # Start the app
 CMD ["node", "dist/index.js"]

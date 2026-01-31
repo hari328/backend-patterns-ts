@@ -1,12 +1,6 @@
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { PostCreatedEvent } from '@repo/types';
 import { env } from '../config/env';
-
-export interface PostCreatedEvent {
-  eventType: 'POST_CREATED';
-  postId: string;
-  userId: string;
-  timestamp: string;
-}
 
 export class PostsSQSPublisher {
   private client: SQSClient;
@@ -27,6 +21,8 @@ export class PostsSQSPublisher {
   }
 
   async publishPostCreated(postId: string, userId: string): Promise<string | undefined> {
+    console.log('[PostsSQSPublisher] Publishing POST_CREATED event', { postId, userId, queueUrl: this.queueUrl });
+
     const event: PostCreatedEvent = {
       eventType: 'POST_CREATED',
       postId,
@@ -34,12 +30,16 @@ export class PostsSQSPublisher {
       timestamp: new Date().toISOString(),
     };
 
+    console.log('[PostsSQSPublisher] Event payload:', JSON.stringify(event));
+
     const command = new SendMessageCommand({
       QueueUrl: this.queueUrl,
       MessageBody: JSON.stringify(event),
     });
 
+    console.log('[PostsSQSPublisher] Sending message to SQS...');
     const response = await this.client.send(command);
+    console.log('[PostsSQSPublisher] Message sent successfully. MessageId:', response.MessageId);
 
     return response.MessageId || undefined;
   }

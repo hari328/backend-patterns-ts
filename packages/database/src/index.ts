@@ -17,6 +17,3 @@ export {
   getSequenceFromSnowflake,
 } from './utils/snowflake';
 
-// Export test utilities
-export { setupTestDb } from './test-utils/setup-test-db';
-

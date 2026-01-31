@@ -18,6 +18,7 @@ export interface MessageMetadata {
 
 export interface MessageHandler {
   handle(message: Message, metadata: MessageMetadata): Promise<void>;
+  flush?(): Promise<void>;
 }
 
 export interface SQSConfig {
@@ -174,6 +175,17 @@ export class SQSConsumer {
       // Sequential processing: Process messages one by one
       for (const message of messages) {
         await this.processMessage(message, successfulMessages, retryMessages, permanentFailureMessages);
+      }
+    }
+
+    // Call flush() if handler implements it (for batch processing)
+    if (this.handler.flush && successfulMessages.length > 0) {
+      try {
+        await this.handler.flush();
+      } catch (error) {
+        console.error('[SQSConsumer] Flush failed, moving all successful messages to retry:', error);
+        retryMessages.push(...successfulMessages);
+        successfulMessages.length = 0;
       }
     }
 

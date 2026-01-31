@@ -2,11 +2,7 @@ import dotenv from 'dotenv';
 import { z } from 'zod';
 
 // Load .env files based on environment
-if (process.env.NODE_ENV === 'development') {
-  dotenv.config();
-} else if (process.env.NODE_ENV === 'test') {
-  dotenv.config({ path: '.env.test' });
-}
+dotenv.config();
 
 // Define validation schema with Zod
 const envSchema = z.object({
