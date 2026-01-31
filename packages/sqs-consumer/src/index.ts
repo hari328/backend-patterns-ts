@@ -6,7 +6,7 @@
 
 // Export SQS Consumer
 export { SQSConsumer } from './sqs-consumer';
-export type { SQSConsumerConfig, SQSConsumerOptions, SQSConfig, MessageHandler, MessageMetadata } from './sqs-consumer';
+export type { SQSConsumerConfig, SQSConsumerOptions, SQSConfig, MessageHandler, MessageMetadata, MessageResult } from './sqs-consumer';
 
 // Export Idempotency
 export type { IdempotencyStore } from './interfaces/idempotency-store';

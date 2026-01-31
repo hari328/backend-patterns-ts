@@ -6,7 +6,6 @@ import {
   Message,
   DeleteMessageBatchRequestEntry,
 } from '@aws-sdk/client-sqs';
-import { RetryException, FailureException } from './exceptions';
 import { IdempotencyStore } from './interfaces/idempotency-store';
 import { BackoffStore, RetryStrategy } from './interfaces/backoff-store';
 import { TimeUnit } from './stores/in-memory-backoff-store';
@@ -16,8 +15,13 @@ export interface MessageMetadata {
   isLastAttempt: boolean;
 }
 
+export interface MessageResult {
+  status: 'success' | 'retry' | 'fail';
+  reason?: string;
+}
+
 export interface MessageHandler {
-  handle(message: Message, metadata: MessageMetadata): Promise<void>;
+  handle(message: Message, metadata: MessageMetadata): Promise<MessageResult>;
   flush?(): Promise<void>;
 }
 
@@ -216,87 +220,71 @@ export class SQSConsumer {
   ): Promise<void> {
     const messageId = message.MessageId || 'unknown';
 
-    try {
-      // Check backoff: Is this message in backoff period?
-      if (this.backoffStore) {
-        const canProcess = await this.backoffStore.canProcess(messageId);
-        if (!canProcess) {
-          console.log(`[SQSConsumer] ⏸️  Message ${messageId} in backoff period, skipping`);
-          // Don't delete - let it become visible again after visibility timeout
-          return;
-        }
+    // Check backoff: Is this message in backoff period?
+    if (this.backoffStore) {
+      const canProcess = await this.backoffStore.canProcess(messageId);
+      if (!canProcess) {
+        console.log(`[SQSConsumer] ⏸️  Message ${messageId} in backoff period, skipping`);
+        // Don't delete - let it become visible again after visibility timeout
+        return;
+      }
+    }
+
+    // Check idempotency: Has this message been processed before?
+    if (this.idempotencyStore) {
+      const alreadyProcessed = await this.idempotencyStore.hasProcessed(messageId);
+      if (alreadyProcessed) {
+        console.log(`[SQSConsumer] ⏭️  Message ${messageId} already processed, skipping`);
+        successfulMessages.push(message); // Delete it to prevent reprocessing
+        return;
       }
 
-      // Check idempotency: Has this message been processed before?
-      if (this.idempotencyStore) {
-        const alreadyProcessed = await this.idempotencyStore.hasProcessed(messageId);
-        if (alreadyProcessed) {
-          console.log(`[SQSConsumer] ⏭️  Message ${messageId} already processed, skipping`);
-          successfulMessages.push(message); // Delete it to prevent reprocessing
-          return;
-        }
+      // ✅ Mark as "in-progress" BEFORE processing to prevent race conditions
+      // This prevents duplicate processing if handler is slow
+      await this.idempotencyStore.markProcessed(messageId, this.idempotencyTtlSeconds);
+    }
 
-        // ✅ Mark as "in-progress" BEFORE processing to prevent race conditions
-        // This prevents duplicate processing if handler is slow
-        await this.idempotencyStore.markProcessed(messageId, this.idempotencyTtlSeconds);
-      }
+    // Extract metadata from message attributes
+    const retryCount = parseInt(message.Attributes?.ApproximateReceiveCount || '0', 10);
+    const maxReceiveCount = this.config.sqsConfig.maxReceiveCount;
 
-      // Extract metadata from message attributes
-      const retryCount = parseInt(message.Attributes?.ApproximateReceiveCount || '0', 10);
-      const maxReceiveCount = this.config.sqsConfig.maxReceiveCount;
+    const metadata: MessageMetadata = {
+      retryCount,
+      isLastAttempt: maxReceiveCount !== undefined ? retryCount >= maxReceiveCount : false,
+    };
 
-      const metadata: MessageMetadata = {
-        retryCount,
-        isLastAttempt: maxReceiveCount !== undefined ? retryCount >= maxReceiveCount : false,
-      };
+    // Process the message - handler returns result
+    const result = await this.handler.handle(message, metadata);
 
-      // Process the message
-      await this.handler.handle(message, metadata);
-
+    // Handle result based on status
+    if (result.status === 'success') {
       // Success! Clear backoff and keep idempotency record
       if (this.backoffStore) {
         await this.backoffStore.clear(messageId);
       }
       successfulMessages.push(message);
       this.messagesProcessed++;
-    } catch (error) {
-      if (error instanceof RetryException) {
-        // RetryException: Remove from idempotency store and record backoff
-        if (this.idempotencyStore) {
-          await this.idempotencyStore.remove(messageId);
-        }
-        if (this.backoffStore) {
-          await this.backoffStore.recordFailure(
-            messageId,
-            this.toMilliseconds(this.backoffBaseDelay, this.backoffBaseDelayUnit),
-            this.retryStrategy
-          );
-        }
-        console.warn(`[SQSConsumer] 🔄 Retry requested for message ${messageId}: ${error.message}`);
-        retryMessages.push(message);
-        this.messagesFailed++;
-      } else if (error instanceof FailureException) {
-        // FailureException: Keep in idempotency store, delete the message (permanent failure)
-        console.error(`[SQSConsumer] 💀 Permanent failure for message ${messageId}: ${error.message}`);
-        permanentFailureMessages.push(message);
-        this.messagesFailed++;
-      } else {
-        // Unknown error: Remove from idempotency store and record backoff
-        if (this.idempotencyStore) {
-          await this.idempotencyStore.remove(messageId);
-        }
-        if (this.backoffStore) {
-          await this.backoffStore.recordFailure(
-            messageId,
-            this.toMilliseconds(this.backoffBaseDelay, this.backoffBaseDelayUnit),
-            this.retryStrategy
-          );
-        }
-        console.error('[SQSConsumer] ❌ Failed to process message:', error);
-        console.error('[SQSConsumer] Message ID:', messageId);
-        retryMessages.push(message);
-        this.messagesFailed++;
+      console.log(`[SQSConsumer] ✅ Successfully processed message ${messageId}`);
+    } else if (result.status === 'retry') {
+      // Retry: Remove from idempotency store and record backoff
+      if (this.idempotencyStore) {
+        await this.idempotencyStore.remove(messageId);
       }
+      if (this.backoffStore) {
+        await this.backoffStore.recordFailure(
+          messageId,
+          this.toMilliseconds(this.backoffBaseDelay, this.backoffBaseDelayUnit),
+          this.retryStrategy
+        );
+      }
+      console.warn(`[SQSConsumer] 🔄 Retry requested for message ${messageId}${result.reason ? `: ${result.reason}` : ''}`);
+      retryMessages.push(message);
+      this.messagesFailed++;
+    } else if (result.status === 'fail') {
+      // Fail: Keep in idempotency store, delete the message (permanent failure)
+      console.error(`[SQSConsumer] 💀 Permanent failure for message ${messageId}${result.reason ? `: ${result.reason}` : ''}`);
+      permanentFailureMessages.push(message);
+      this.messagesFailed++;
     }
   }
 

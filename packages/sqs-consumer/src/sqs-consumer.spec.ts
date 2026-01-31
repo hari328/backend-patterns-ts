@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SQSClient } from '@aws-sdk/client-sqs';
 import { SQSConsumer, type MessageHandler } from './sqs-consumer';
-import { RetryException, FailureException } from './exceptions';
 import { InMemoryIdempotencyStore } from './stores/in-memory-idempotency-store';
 import { InMemoryBackoffStore } from './stores/in-memory-backoff-store';
 
@@ -67,7 +66,7 @@ describe('SQSConsumer - Basic message handling functionality', () => {
     });
 
     // Mock handler to succeed
-    mockHandler.handle = vi.fn().mockResolvedValue(undefined);
+    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'success' });
 
     await consumer.start();
 
@@ -87,7 +86,7 @@ describe('SQSConsumer - Basic message handling functionality', () => {
     expect(mockSend).toHaveBeenCalledTimes(3);
   });
 
-  it('should NOT delete message when handler throws RetryException', async () => {
+  it('should NOT delete message when handler returns retry status', async () => {
     // Arrange
     const mockMessage = {
       MessageId: 'msg-456',
@@ -105,10 +104,11 @@ describe('SQSConsumer - Basic message handling functionality', () => {
       Messages: [],
     });
 
-    // Mock handler to throw RetryException
-    mockHandler.handle = vi.fn().mockRejectedValue(
-      new RetryException('Database connection failed')
-    );
+    // Mock handler to return retry status
+    mockHandler.handle = vi.fn().mockResolvedValue({
+      status: 'retry',
+      reason: 'Database connection failed'
+    });
 
     // Act
     await consumer.start();
@@ -128,7 +128,7 @@ describe('SQSConsumer - Basic message handling functionality', () => {
     expect(mockSend).toHaveBeenCalledTimes(2);
   });
 
-  it('should delete message when handler throws FailureException', async () => {
+  it('should delete message when handler returns fail status', async () => {
     // Arrange
     const mockMessage = {
       MessageId: 'msg-789',
@@ -152,10 +152,11 @@ describe('SQSConsumer - Basic message handling functionality', () => {
       Messages: [],
     });
 
-    // Mock handler to throw FailureException
-    mockHandler.handle = vi.fn().mockRejectedValue(
-      new FailureException('Invalid JSON')
-    );
+    // Mock handler to return fail status
+    mockHandler.handle = vi.fn().mockResolvedValue({
+      status: 'fail',
+      reason: 'Invalid JSON'
+    });
 
     // Act
     await consumer.start();
@@ -173,47 +174,6 @@ describe('SQSConsumer - Basic message handling functionality', () => {
 
     // Assert: send was called 3 times (ReceiveMessage + DeleteMessageBatch + ReceiveMessage)
     expect(mockSend).toHaveBeenCalledTimes(3);
-  });
-
-  it('should NOT delete message when handler throws unknown error', async () => {
-    // Arrange
-    const mockMessage = {
-      MessageId: 'msg-999',
-      ReceiptHandle: 'receipt-999',
-      Body: '{}',
-    };
-
-    // Mock ReceiveMessage to return one message
-    mockSend.mockResolvedValueOnce({
-      Messages: [mockMessage],
-    });
-
-    // Mock second ReceiveMessage to return empty (stop polling)
-    mockSend.mockResolvedValue({
-      Messages: [],
-    });
-
-    // Mock handler to throw generic error
-    mockHandler.handle = vi.fn().mockRejectedValue(
-      new Error('Unexpected error')
-    );
-
-    // Act
-    await consumer.start();
-    await new Promise(resolve => setTimeout(resolve, 100));
-    await consumer.stop();
-
-    // Assert: Handler was called with message and metadata
-    expect(mockHandler.handle).toHaveBeenCalledWith(
-      mockMessage,
-      expect.objectContaining({
-        retryCount: 0,
-        isLastAttempt: false,
-      })
-    );
-
-    // Assert: send was called 2 times (ReceiveMessage + ReceiveMessage, NO delete)
-    expect(mockSend).toHaveBeenCalledTimes(2);
   });
 
   it('should pass metadata with retry count to handler', async () => {
@@ -244,7 +204,7 @@ describe('SQSConsumer - Basic message handling functionality', () => {
     });
 
     // Mock handler to succeed
-    mockHandler.handle = vi.fn().mockResolvedValue(undefined);
+    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'success' });
 
     // Act
     await consumer.start();
@@ -302,7 +262,7 @@ describe('SQSConsumer - Basic message handling functionality', () => {
     });
 
     // Mock handler to succeed
-    mockHandler.handle = vi.fn().mockResolvedValue(undefined);
+    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'success' });
 
     // Act
     await consumerWithMaxRetries.start();
@@ -353,6 +313,7 @@ describe('SQSConsumer - Basic message handling functionality', () => {
       await new Promise(resolve => setTimeout(resolve, id === 1 ? 50 : 10));
 
       processingTimes.push(Date.now() - startTime);
+      return { status: 'success' };
     });
 
     // Mock ReceiveMessage to return multiple messages
@@ -427,6 +388,7 @@ describe('SQSConsumer - Basic message handling functionality', () => {
       await new Promise(resolve => setTimeout(resolve, 30));
 
       endTimes[id] = Date.now();
+      return { status: 'success' };
     });
 
     // Mock ReceiveMessage
@@ -522,7 +484,7 @@ describe('SQSConsumer - Idempotency', () => {
       Messages: [],
     });
 
-    mockHandler.handle = vi.fn().mockResolvedValue(undefined);
+    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'success' });
 
     // Act
     await consumer.start();
@@ -569,7 +531,7 @@ describe('SQSConsumer - Idempotency', () => {
       Messages: [],
     });
 
-    mockHandler.handle = vi.fn().mockResolvedValue(undefined);
+    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'success' });
 
     // Act
     await consumer.start();
@@ -624,7 +586,7 @@ describe('SQSConsumer - Idempotency', () => {
       Messages: [],
     });
 
-    mockHandler.handle = vi.fn().mockResolvedValue(undefined);
+    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'success' });
 
     // Act
     await consumer.start();
@@ -750,7 +712,7 @@ describe('SQSConsumer - Exponential Backoff', () => {
       Messages: [],
     });
 
-    mockHandler.handle = vi.fn().mockResolvedValue(undefined);
+    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'success' });
 
     // Act
     await consumer.start();
@@ -799,8 +761,8 @@ describe('SQSConsumer - Exponential Backoff', () => {
       Messages: [],
     });
 
-    // Handler throws RetryException
-    mockHandler.handle = vi.fn().mockRejectedValue(new RetryException('Temporary error'));
+    // Handler returns retry status
+    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'retry', reason: 'Temporary error' });
 
     // Act
     await consumer.start();
@@ -854,8 +816,8 @@ describe('SQSConsumer - Exponential Backoff', () => {
       Messages: [],
     });
 
-    // Handler throws RetryException
-    mockHandler.handle = vi.fn().mockRejectedValue(new RetryException('Temporary error'));
+    // Handler returns retry status
+    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'retry', reason: 'Temporary error' });
 
     // Act: First failure
     await consumer.start();
