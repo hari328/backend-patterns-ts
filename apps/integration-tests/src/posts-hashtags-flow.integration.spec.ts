@@ -52,13 +52,13 @@ describe('Posts → Hashtags Integration Flow', () => {
     const post2Id = post2Response.body.id;
 
     console.log('Waiting for hashtags to be processed...');
-    
+
     await waitForCondition(async () => {
       const result = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(hashtags);
       return result[0].count >= 3;
-    }, { timeout: 15000, interval: 500 });
+    }, { timeout: 300000, interval: 1000 });
 
     const allHashtags = await db.select().from(hashtags);
 

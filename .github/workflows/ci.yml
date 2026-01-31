@@ -300,6 +300,19 @@ jobs:
           }
           echo "✅ Recommender Service is ready"
 
+      - name: Verify SQS queue exists
+        run: |
+          echo "Checking SQS queue..."
+          aws --endpoint-url=http://localhost:4566 sqs get-queue-attributes \
+            --queue-url http://localhost:4566/000000000000/post-stream \
+            --attribute-names All \
+            --region us-east-1 \
+            --no-sign-request || echo "⚠️ Queue check failed"
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
+
       - name: Run integration tests
         run: npm run test:integration
         env:
@@ -310,6 +323,15 @@ jobs:
           DB_NAME: social_media_db
           DB_USER: postgres
           DB_PASSWORD: postgres
+
+      - name: Show service logs on failure
+        if: failure()
+        run: |
+          echo "=== Posts Service Logs ==="
+          cat posts-service.log || echo "No posts-service.log found"
+          echo ""
+          echo "=== Recommender Service Logs ==="
+          cat recommender-service.log || echo "No recommender-service.log found"
 
       - name: Upload service logs
         if: failure()
