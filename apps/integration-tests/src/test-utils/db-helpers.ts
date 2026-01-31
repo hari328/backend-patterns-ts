@@ -8,19 +8,20 @@ let pool: Pool | null = null;
 let db: any = null;
 
 /**
- * Connect to PostgreSQL running in Docker Compose
+ * Connect to PostgreSQL running in Docker Compose or CI
+ * Uses environment variables for configuration, with defaults for local development
  */
 export async function connectToDockerDB() {
   if (db) return db;
-  
+
   pool = new Pool({
-    host: 'localhost',
-    port: 7732,
-    database: 'social_media_db',
-    user: 'postgres',
-    password: 'postgres',
+    host: process.env.DB_HOST || 'localhost',
+    port: Number.parseInt(process.env.DB_PORT || '7732', 10),
+    database: process.env.DB_NAME || 'social_media_db',
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || 'postgres',
   });
-  
+
   db = drizzle(pool, { schema });
   return db;
 }

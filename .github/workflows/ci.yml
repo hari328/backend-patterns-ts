@@ -86,7 +86,7 @@ jobs:
           path: |
             apps/*/coverage
             packages/*/coverage
-          retention-days: 30
+          retention-days: 3
 
       - name: Coverage Summary
         if: github.event_name == 'pull_request'
@@ -155,4 +155,221 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/social_media_db
         run: npm run db:migrate --workspace=@repo/database
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test]
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: social_media_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      localstack:
+        image: localstack/localstack:latest
+        env:
+          SERVICES: sqs
+          DEBUG: 1
+        ports:
+          - 4566:4566
+        options: >-
+          --health-cmd "awslocal sqs list-queues || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build packages
+        run: npm run build
+
+      - name: Initialize LocalStack SQS queues
+        run: |
+          # Wait for LocalStack to be fully ready
+          sleep 5
+
+          # Create SQS queue
+          aws --endpoint-url=http://localhost:4566 sqs create-queue \
+            --queue-name post-stream \
+            --region us-east-1 \
+            --no-sign-request
+
+          echo "✅ SQS queue 'post-stream' created"
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/social_media_db
+        run: npm run db:migrate --workspace=@repo/database
+
+      - name: Seed database
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/social_media_db
+        run: npm run db:seed --workspace=@repo/database
+
+      - name: Start Posts Service
+        run: |
+          cd apps/posts-service
+          echo "Starting posts service with environment:"
+          echo "  NODE_ENV=$NODE_ENV"
+          echo "  PORT=$PORT"
+          echo "  SQS_POSTS_STREAM_QUEUE_URL=$SQS_POSTS_STREAM_QUEUE_URL"
+          npm run start > ../../posts-service.log 2>&1 &
+          echo $! > ../../posts-service.pid
+          echo "✅ Posts Service started (PID: $(cat ../../posts-service.pid))"
+          sleep 2
+          if ! ps -p $(cat ../../posts-service.pid) > /dev/null; then
+            echo "❌ Posts Service failed to start!"
+            cat ../../posts-service.log
+            exit 1
+          fi
+        env:
+          NODE_ENV: test
+          PORT: 6001
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/social_media_db
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          SQS_POSTS_STREAM_QUEUE_URL: http://localhost:4566/000000000000/post-stream
+
+      - name: Start Recommender Service
+        run: |
+          cd apps/recommender-service
+          echo "Starting recommender service with environment:"
+          echo "  NODE_ENV=$NODE_ENV"
+          echo "  PORT=$PORT"
+          echo "  SQS_POSTS_STREAM_QUEUE_URL=$SQS_POSTS_STREAM_QUEUE_URL"
+          npm run start > ../../recommender-service.log 2>&1 &
+          echo $! > ../../recommender-service.pid
+          echo "✅ Recommender Service started (PID: $(cat ../../recommender-service.pid))"
+          sleep 2
+          if ! ps -p $(cat ../../recommender-service.pid) > /dev/null; then
+            echo "❌ Recommender Service failed to start!"
+            cat ../../recommender-service.log
+            exit 1
+          fi
+        env:
+          NODE_ENV: test
+          APP_STAGE: test
+          PORT: 6000
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: social_media_db
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4566
+          SQS_POSTS_STREAM_QUEUE_URL: http://localhost:4566/000000000000/post-stream
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+
+      - name: Wait for services to be ready
+        run: |
+          echo "Waiting for Posts Service (port 6001)..."
+          timeout 60 bash -c 'until curl -f http://localhost:6001/health 2>/dev/null; do sleep 2; done' || {
+            echo "❌ Posts Service failed to start"
+            cat posts-service.log
+            exit 1
+          }
+          echo "✅ Posts Service is ready"
+
+          echo "Waiting for Recommender Service (port 6000)..."
+          timeout 60 bash -c 'until curl -f http://localhost:6000/health 2>/dev/null; do sleep 2; done' || {
+            echo "❌ Recommender Service failed to start"
+            cat recommender-service.log
+            exit 1
+          }
+          echo "✅ Recommender Service is ready"
+
+      - name: Verify SQS queue exists
+        run: |
+          echo "Checking SQS queue..."
+          aws --endpoint-url=http://localhost:4566 sqs get-queue-attributes \
+            --queue-url http://localhost:4566/000000000000/post-stream \
+            --attribute-names All \
+            --region us-east-1 \
+            --no-sign-request || echo "⚠️ Queue check failed"
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
+
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/social_media_db
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: social_media_db
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+
+      - name: Show service logs on failure
+        if: failure()
+        run: |
+          echo "=== Posts Service Logs ==="
+          cat posts-service.log || echo "No posts-service.log found"
+          echo ""
+          echo "=== Recommender Service Logs ==="
+          cat recommender-service.log || echo "No recommender-service.log found"
+
+      - name: Upload service logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-logs
+          path: |
+            posts-service.log
+            recommender-service.log
+          retention-days: 7
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -f posts-service.pid ]; then
+            kill $(cat posts-service.pid) 2>/dev/null || true
+          fi
+          if [ -f recommender-service.pid ]; then
+            kill $(cat recommender-service.pid) 2>/dev/null || true
+          fi
 
