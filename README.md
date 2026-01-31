@@ -1,135 +1,301 @@
-# Turborepo starter
+# Backend Patterns TypeScript
 
-This Turborepo starter is maintained by the Turborepo core team.
+A TypeScript monorepo demonstrating backend patterns including event-driven architecture, SQS message processing, and microservices communication.
 
-## Using this example
+## Overview
 
-Run the following command:
+This project showcases a social media platform backend with two main services:
 
-```sh
-npx create-turbo@latest
-```
+1. **Posts Service** - REST API for creating and managing posts
+2. **Recommender Service** - Event-driven service that processes posts and tracks hashtag usage
 
-## What's inside?
+### Key Features
 
-This Turborepo includes the following packages/apps:
+- **Event-Driven Architecture**: Services communicate via AWS SQS (LocalStack for local development)
+- **Snowflake IDs**: Distributed unique ID generation for database records
+- **Hashtag Extraction & Counting**: Automatic hashtag extraction from posts with usage tracking
+- **Microservices Pattern**: Independent services with clear boundaries
+- **Type-Safe**: 100% TypeScript with strict type checking
 
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
+## Architecture
 
 ```
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build
-
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build
-yarn dlx turbo build
-pnpm exec turbo build
+┌─────────────────┐         SQS Queue          ┌──────────────────────┐
+│  Posts Service  │────────────────────────────▶│ Recommender Service  │
+│   (Port 6001)   │   post-stream messages     │    (Port 6000)       │
+└─────────────────┘                             └──────────────────────┘
+        │                                                  │
+        │                                                  │
+        ▼                                                  ▼
+   PostgreSQL (Port 7732)                          PostgreSQL (Port 7732)
+   - posts table                                   - hashtags table
+   - users table                                   - post_hashtags table
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+### How It Works
 
-```
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build --filter=docs
+1. **Create a Post**: User creates a post via Posts Service REST API
+2. **Publish Event**: Posts Service publishes a message to SQS `post-stream` queue
+3. **Process Event**: Recommender Service consumes the message from SQS
+4. **Extract Hashtags**: Service extracts hashtags from post caption (e.g., `#nodejs`, `#typescript`)
+5. **Update Counts**: Increments usage count for each hashtag in the database
+6. **Query Top Hashtags**: Retrieve trending hashtags via REST API
 
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build --filter=docs
-yarn exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-```
+## What's Inside?
 
-### Develop
+### Apps
 
-To develop all apps and packages, run the following command:
+- **`apps/posts-service`** - Express.js REST API for post management
+  - Create posts with captions
+  - Publishes events to SQS
+  - Port: 6001
 
-```
-cd my-turborepo
+- **`apps/recommender-service`** - Event-driven hashtag processor
+  - SQS consumer for post events
+  - Hashtag extraction and counting
+  - REST API for top hashtags
+  - Port: 6000
 
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev
+- **`apps/integration-tests`** - End-to-end integration tests
+  - Tests full flow: Create post → SQS → Process → Database → API
 
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev
-yarn exec turbo dev
-pnpm exec turbo dev
-```
+### Packages
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+- **`@repo/database`** - Shared database utilities
+  - Drizzle ORM schemas
+  - Snowflake ID generator
+  - Database migrations
 
-```
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev --filter=web
+- **`@repo/sqs-consumer`** - Reusable SQS consumer library
+  - Message polling and processing
+  - Error handling and retries
+  - Graceful shutdown
 
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev --filter=web
-yarn exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
+- **`@repo/types`** - Shared TypeScript types
+- **`@repo/eslint-config`** - Shared ESLint configuration
+- **`@repo/typescript-config`** - Shared TypeScript configuration
 
-### Remote Caching
+## Core Concepts
 
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
+### 1. SQS Consumer
 
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
+The `@repo/sqs-consumer` package provides a reusable SQS message consumer:
 
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
+```typescript
+import { SQSConsumer } from '@repo/sqs-consumer';
 
-```
-cd my-turborepo
+const consumer = new SQSConsumer({
+  queueUrl: process.env.SQS_POSTS_STREAM_QUEUE_URL,
+  handleMessage: async (message) => {
+    const event = JSON.parse(message.Body);
+    await processPost(event);
+  },
+});
 
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo login
-
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo login
-yarn exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-```
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo link
-
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo link
-yarn exec turbo link
-pnpm exec turbo link
+await consumer.start();
 ```
 
-## Useful Links
+**Features:**
+- Automatic message polling
+- Configurable batch size and wait time
+- Error handling with retries
+- Graceful shutdown support
 
-Learn more about the power of Turborepo:
+### 2. Snowflake IDs
 
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+Distributed unique ID generation using Twitter's Snowflake algorithm:
+
+```typescript
+import { generateSnowflakeId } from '@repo/database';
+
+const postId = generateSnowflakeId();
+// => "275981361922183169"
+```
+
+**Benefits:**
+- Time-ordered IDs (sortable by creation time)
+- No database round-trip needed
+- 64-bit integers (BIGINT in PostgreSQL)
+- Unique across distributed systems
+
+**Storage:**
+- Database: `BIGINT` (8 bytes)
+- TypeScript: `string` (avoids JSON serialization issues)
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js >= 18 (tested on v23.11.0)
+- Docker & Docker Compose
+- npm >= 10
+
+### Installation
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd backend-patterns-ts
+
+# Install dependencies
+npm install
+```
+
+## Running Locally
+
+### Quick Start (Docker)
+
+Start all services with a single command:
+
+```bash
+docker compose up -d
+```
+
+This will automatically:
+1. Start PostgreSQL (port 7732), LocalStack (port 4566), and Redis (port 6379)
+2. Wait for PostgreSQL to be healthy
+3. Run database migrations and seed data
+4. Start Posts Service (port 6001) and Recommender Service (port 6000)
+
+View logs:
+```bash
+# All services
+docker compose logs -f
+
+# Specific service
+docker compose logs -f posts-service
+docker compose logs -f recommender-service
+```
+
+### Alternative: Local Development
+
+If you want to run services locally (outside Docker) for development:
+
+```bash
+# 1. Start infrastructure (includes automatic DB initialization)
+docker compose up -d postgres localstack redis db-init
+
+# 2. Start services locally
+# Terminal 1 - Posts Service
+npm run dev --workspace=posts-service
+
+# Terminal 2 - Recommender Service
+npm run dev --workspace=recommender-service
+```
+
+### Verify Services
+
+```bash
+# Posts Service health check
+curl http://localhost:6001/health
+
+# Recommender Service health check
+curl http://localhost:6000/health
+```
+
+## Usage Examples
+
+### 1. Create a Post with Hashtags
+
+```bash
+curl -X POST http://localhost:6001/api/posts \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "123",
+    "caption": "Learning #nodejs and #typescript today! #coding"
+  }'
+```
+
+**Response:**
+```json
+{
+  "id": "275981361922183169",
+  "userId": "123",
+  "caption": "Learning #nodejs and #typescript today! #coding",
+  "createdAt": "2024-01-31T10:30:00.000Z"
+}
+```
+
+### 2. Get Top Hashtags
+
+Wait a few seconds for the recommender service to process the message, then:
+
+```bash
+# Get top 5 hashtags (default)
+curl http://localhost:6000/api/hashtags/top
+
+# Get top 3 hashtags
+curl http://localhost:6000/api/hashtags/top?limit=3
+```
+
+**Response:**
+```json
+{
+  "hashtags": [
+    {
+      "id": "275981362000000001",
+      "name": "nodejs",
+      "usageCount": 42
+    },
+    {
+      "id": "275981362000000002",
+      "name": "typescript",
+      "usageCount": 38
+    },
+    {
+      "id": "275981362000000003",
+      "name": "coding",
+      "usageCount": 25
+    }
+  ],
+  "count": 3
+}
+```
+
+## Testing
+
+### Unit Tests
+
+Run unit tests for a specific service:
+
+```bash
+# Posts Service tests
+npm run test:run --workspace=posts-service
+
+# Recommender Service tests
+npm run test:run --workspace=recommender-service
+
+# SQS Consumer tests
+npm run test:run --workspace=@repo/sqs-consumer
+
+# All unit tests
+npm run test
+```
+
+### Integration Tests
+
+Integration tests verify the entire flow end-to-end:
+
+```bash
+# Make sure Docker services are running
+docker-compose up -d
+
+# Run integration tests
+npm run test:integration
+```
+
+**What integration tests cover:**
+1. Create posts via Posts Service HTTP API
+2. Verify SQS message publishing
+3. Wait for Recommender Service to process messages
+4. Verify hashtags stored in database
+5. Test GET /api/hashtags/top endpoint
+6. Verify API response matches database state
+
+## Learn More
+
+- [Turborepo Documentation](https://turborepo.dev/docs)
+- [Drizzle ORM](https://orm.drizzle.team/)
+- [AWS SQS](https://aws.amazon.com/sqs/)
+- [LocalStack](https://localstack.cloud/)
+- [Snowflake IDs](https://en.wikipedia.org/wiki/Snowflake_ID)
