@@ -1,0 +1,26 @@
+{
+  "name": "integration-tests",
+  "version": "1.0.0",
+  "description": "Cross-service integration tests",
+  "private": true,
+  "scripts": {
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:integration": "vitest run"
+  },
+  "dependencies": {
+    "@repo/database": "*",
+    "@repo/types": "*"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "*",
+    "@types/node": "^20.10.0",
+    "@types/supertest": "^6.0.3",
+    "drizzle-orm": "^0.36.4",
+    "pg": "^8.17.2",
+    "supertest": "^7.2.2",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.8"
+  }
+}
+

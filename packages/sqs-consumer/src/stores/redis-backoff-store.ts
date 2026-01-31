@@ -41,7 +41,7 @@ export class RedisBackoffStore implements BackoffStore {
     const entry = await this.redis.hgetall(key);
 
     // If no entry exists, message can be processed
-    if (!entry || !entry.retryCount) {
+    if (!entry || !entry.retryCount || !entry.lastFailureTime || !entry.baseDelay) {
       return true;
     }
 

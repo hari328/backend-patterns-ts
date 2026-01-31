@@ -26,3 +26,16 @@ SELECT * FROM hashtags ORDER BY usage_count DESC;
 # Query post-hashtag relationships
 SELECT * FROM posts_hashtags;
 ```
+
+---
+
+how to run integration tests
+
+```
+
+docker-compose up -d
+
+docker-compose ps
+
+npm run test:integration --workspace=integration-tests
+``` 
