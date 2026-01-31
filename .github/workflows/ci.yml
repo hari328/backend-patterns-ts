@@ -75,6 +75,43 @@ jobs:
       - name: Build packages
         run: npm run build
 
-      - name: Run unit tests
-        run: npm run test
+      - name: Run unit tests with coverage
+        run: npm run test -- -- --coverage
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-reports
+          path: |
+            apps/*/coverage
+            packages/*/coverage
+          retention-days: 30
+
+      - name: Coverage Summary
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "## 📊 Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          for dir in apps/*/coverage packages/*/coverage; do
+            if [ -d "$dir" ]; then
+              workspace=$(echo $dir | cut -d'/' -f1-2)
+              echo "### $workspace" >> $GITHUB_STEP_SUMMARY
+              if [ -f "$dir/coverage-summary.json" ]; then
+                node -e "
+                  const fs = require('fs');
+                  const summary = JSON.parse(fs.readFileSync('$dir/coverage-summary.json'));
+                  const total = summary.total;
+                  console.log('| Metric | Coverage |');
+                  console.log('|--------|----------|');
+                  console.log('| Lines | ' + total.lines.pct + '% |');
+                  console.log('| Statements | ' + total.statements.pct + '% |');
+                  console.log('| Functions | ' + total.functions.pct + '% |');
+                  console.log('| Branches | ' + total.branches.pct + '% |');
+                " >> $GITHUB_STEP_SUMMARY
+              fi
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
 

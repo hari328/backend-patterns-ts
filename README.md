@@ -1,5 +1,7 @@
 # Backend Patterns TypeScript
 
+![CI](https://github.com/hari328/backend-patterns-ts/workflows/CI/badge.svg)
+
 A TypeScript monorepo demonstrating backend patterns including event-driven architecture, SQS message processing, and microservices communication.
 
 ## Overview
