@@ -124,8 +124,14 @@ describe('SQSConsumer - Basic message handling functionality', () => {
       })
     );
 
-    // Assert: send was called 2 times (ReceiveMessage + ReceiveMessage, NO delete)
-    expect(mockSend).toHaveBeenCalledTimes(2);
+    // Assert: send was called 3 times (ReceiveMessage + ChangeMessageVisibility + ReceiveMessage, NO delete)
+    expect(mockSend).toHaveBeenCalledTimes(3);
+
+    // Verify ChangeMessageVisibility was called
+    const changeVisibilityCall = mockSend.mock.calls.find((call: any) =>
+      call[0].constructor.name === 'ChangeMessageVisibilityCommand'
+    );
+    expect(changeVisibilityCall).toBeDefined();
   });
 
   it('should delete message when handler returns fail status', async () => {
@@ -598,11 +604,10 @@ describe('SQSConsumer - Idempotency', () => {
   });
 });
 
-describe('SQSConsumer - Exponential Backoff', () => {
+describe('SQSConsumer - Visibility Timeout on Retry', () => {
   let mockSend: any;
   let mockHandler: MessageHandler;
   let consumer: SQSConsumer;
-  let backoffStore: InMemoryBackoffStore;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -615,20 +620,16 @@ describe('SQSConsumer - Exponential Backoff', () => {
     vi.restoreAllMocks();
   });
 
-  it('should NOT process message if in backoff period', async () => {
+  it('should calculate and set visibility timeout based on retry count when handler returns retry', async () => {
     // Arrange
-    backoffStore = new InMemoryBackoffStore();
-
     const mockMessage = {
-      MessageId: 'msg-backoff-1',
-      ReceiptHandle: 'receipt-backoff-1',
+      MessageId: 'msg-retry-1',
+      ReceiptHandle: 'receipt-retry-1',
       Body: JSON.stringify({ test: 'data' }),
-      Attributes: { ApproximateReceiveCount: '2' },
+      Attributes: { ApproximateReceiveCount: '2' }, // Second retry
     };
 
-    // Record a failure with 5 second backoff
-    await backoffStore.recordFailure('msg-backoff-1', 5000);
-
+    // Consumer with exponential backoff: base delay 5 seconds
     consumer = new SQSConsumer(
       {
         sqsConfig: {
@@ -639,8 +640,18 @@ describe('SQSConsumer - Exponential Backoff', () => {
         },
       },
       mockHandler,
-      { backoffStore }
+      {
+        backoffBaseDelay: 5,
+        backoffBaseDelayUnit: 'sec',
+        retryStrategy: 'exponential'
+      }
     );
+
+    // Mock handler to return retry (no visibilityTimeoutSeconds)
+    mockHandler.handle = vi.fn().mockResolvedValue({
+      status: 'retry',
+      reason: 'Temporary error'
+    });
 
     // Mock ReceiveMessage to return the message
     mockSend.mockResolvedValueOnce({
@@ -657,201 +668,21 @@ describe('SQSConsumer - Exponential Backoff', () => {
     await new Promise(resolve => setTimeout(resolve, 100));
     await consumer.stop();
 
-    // Assert: Handler should NOT be called (message in backoff)
-    expect(mockHandler.handle).not.toHaveBeenCalled();
+    // Assert: Handler was called
+    expect(mockHandler.handle).toHaveBeenCalledTimes(1);
 
-    // Message should NOT be deleted (still in backoff)
+    // Assert: ChangeMessageVisibility was called with calculated timeout
+    // Retry count = 2, exponential backoff: 5 * 2^2 = 20 seconds
+    const changeVisibilityCall = mockSend.mock.calls.find((call: any) =>
+      call[0].constructor.name === 'ChangeMessageVisibilityCommand'
+    );
+    expect(changeVisibilityCall).toBeDefined();
+    expect(changeVisibilityCall[0].input.VisibilityTimeout).toBe(20);
+
+    // Message should NOT be deleted (retry)
     const deleteCall = mockSend.mock.calls.find((call: any) =>
       call[0].constructor.name === 'DeleteMessageBatchCommand'
     );
     expect(deleteCall).toBeUndefined();
   });
-
-  it('should process message after backoff period expires', async () => {
-    // Arrange
-    backoffStore = new InMemoryBackoffStore();
-
-    const mockMessage = {
-      MessageId: 'msg-backoff-2',
-      ReceiptHandle: 'receipt-backoff-2',
-      Body: JSON.stringify({ test: 'data' }),
-      Attributes: { ApproximateReceiveCount: '2' },
-    };
-
-    // Record a failure with very short backoff (10ms)
-    await backoffStore.recordFailure('msg-backoff-2', 10);
-
-    consumer = new SQSConsumer(
-      {
-        sqsConfig: {
-          queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue',
-          maxNumberOfMessages: 10,
-          waitTimeSeconds: 20,
-          visibilityTimeout: 30,
-        },
-      },
-      mockHandler,
-      { backoffStore }
-    );
-
-    // Wait for backoff to expire
-    await new Promise(resolve => setTimeout(resolve, 50));
-
-    // Mock ReceiveMessage to return the message
-    mockSend.mockResolvedValueOnce({
-      Messages: [mockMessage],
-    });
-
-    // Mock DeleteMessageBatch
-    mockSend.mockResolvedValueOnce({
-      Successful: [{ Id: '0' }],
-    });
-
-    // Mock second ReceiveMessage to return empty (stop polling)
-    mockSend.mockResolvedValue({
-      Messages: [],
-    });
-
-    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'success' });
-
-    // Act
-    await consumer.start();
-    await new Promise(resolve => setTimeout(resolve, 100));
-    await consumer.stop();
-
-    // Assert: Handler SHOULD be called (backoff expired)
-    expect(mockHandler.handle).toHaveBeenCalledTimes(1);
-
-    // Backoff should be cleared after successful processing
-    const retryCount = await backoffStore.getRetryCount('msg-backoff-2');
-    expect(retryCount).toBe(0);
-  });
-
-  it('should record failure and increase backoff exponentially', async () => {
-    // Arrange
-    backoffStore = new InMemoryBackoffStore();
-
-    const mockMessage = {
-      MessageId: 'msg-backoff-3',
-      ReceiptHandle: 'receipt-backoff-3',
-      Body: JSON.stringify({ test: 'data' }),
-      Attributes: { ApproximateReceiveCount: '1' },
-    };
-
-    consumer = new SQSConsumer(
-      {
-        sqsConfig: {
-          queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue',
-          maxNumberOfMessages: 10,
-          waitTimeSeconds: 20,
-          visibilityTimeout: 30,
-        },
-      },
-      mockHandler,
-      { backoffStore }
-    );
-
-    // Mock ReceiveMessage to return the message
-    mockSend.mockResolvedValueOnce({
-      Messages: [mockMessage],
-    });
-
-    // Mock second ReceiveMessage to return empty (stop polling)
-    mockSend.mockResolvedValue({
-      Messages: [],
-    });
-
-    // Handler returns retry status
-    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'retry', reason: 'Temporary error' });
-
-    // Act
-    await consumer.start();
-    await new Promise(resolve => setTimeout(resolve, 100));
-    await consumer.stop();
-
-    // Assert: Backoff should be recorded
-    const retryCount = await backoffStore.getRetryCount('msg-backoff-3');
-    expect(retryCount).toBe(1);
-
-    const canProcess = await backoffStore.canProcess('msg-backoff-3');
-    expect(canProcess).toBe(false); // Should be in backoff
-  });
-
-  it('should use fixed delay strategy when configured', async () => {
-    // Arrange
-    backoffStore = new InMemoryBackoffStore();
-
-    const mockMessage = {
-      MessageId: 'msg-fixed-1',
-      ReceiptHandle: 'receipt-fixed-1',
-      Body: JSON.stringify({ test: 'data' }),
-      Attributes: { ApproximateReceiveCount: '1' },
-    };
-
-    consumer = new SQSConsumer(
-      {
-        sqsConfig: {
-          queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue',
-          maxNumberOfMessages: 10,
-          waitTimeSeconds: 20,
-          visibilityTimeout: 30,
-        },
-      },
-      mockHandler,
-      {
-        backoffStore,
-        backoffBaseDelay: 100,
-        backoffBaseDelayUnit: 'ms',
-        retryStrategy: 'fixed'
-      }
-    );
-
-    // Mock ReceiveMessage to return the message
-    mockSend.mockResolvedValueOnce({
-      Messages: [mockMessage],
-    });
-
-    // Mock second ReceiveMessage to return empty (stop polling)
-    mockSend.mockResolvedValue({
-      Messages: [],
-    });
-
-    // Handler returns retry status
-    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'retry', reason: 'Temporary error' });
-
-    // Act: First failure
-    await consumer.start();
-    await new Promise(resolve => setTimeout(resolve, 50));
-    await consumer.stop();
-
-    // Assert: Backoff should be recorded
-    let retryCount = await backoffStore.getRetryCount('msg-fixed-1');
-    expect(retryCount).toBe(1);
-
-    // Get the first failure time
-    const firstFailureTime = backoffStore.getLastFailureTime('msg-fixed-1');
-    expect(firstFailureTime).not.toBeNull();
-
-    // Simulate second failure (to test fixed delay doesn't grow)
-    await backoffStore.recordFailure('msg-fixed-1', 100, 'fixed');
-    retryCount = await backoffStore.getRetryCount('msg-fixed-1');
-    expect(retryCount).toBe(2);
-
-    // Simulate third failure
-    await backoffStore.recordFailure('msg-fixed-1', 100, 'fixed');
-    retryCount = await backoffStore.getRetryCount('msg-fixed-1');
-    expect(retryCount).toBe(3);
-
-    // With fixed strategy, delay should always be 100ms regardless of retry count
-    // Wait 50ms - should still be in backoff
-    await new Promise(resolve => setTimeout(resolve, 50));
-    let canProcess = await backoffStore.canProcess('msg-fixed-1');
-    expect(canProcess).toBe(false);
-
-    // Wait another 60ms (total 110ms) - should be able to process
-    await new Promise(resolve => setTimeout(resolve, 60));
-    canProcess = await backoffStore.canProcess('msg-fixed-1');
-    expect(canProcess).toBe(true);
-  });
 });
-

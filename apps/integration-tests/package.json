@@ -5,7 +5,6 @@
   "private": true,
   "scripts": {
     "test": "vitest",
-    "test:run": "vitest run",
     "test:integration": "vitest run"
   },
   "dependencies": {

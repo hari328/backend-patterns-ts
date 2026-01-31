@@ -3,12 +3,11 @@ import {
   SQSClientConfig,
   ReceiveMessageCommand,
   DeleteMessageBatchCommand,
+  ChangeMessageVisibilityCommand,
   Message,
   DeleteMessageBatchRequestEntry,
 } from '@aws-sdk/client-sqs';
 import { IdempotencyStore } from './interfaces/idempotency-store';
-import { BackoffStore, RetryStrategy } from './interfaces/backoff-store';
-import { TimeUnit } from './stores/in-memory-backoff-store';
 
 export interface MessageMetadata {
   retryCount: number;
@@ -22,7 +21,6 @@ export interface MessageResult {
 
 export interface MessageHandler {
   handle(message: Message, metadata: MessageMetadata): Promise<MessageResult>;
-  flush?(): Promise<void>;
 }
 
 export interface SQSConfig {
@@ -40,11 +38,13 @@ export interface SQSConsumerConfig {
   processInParallel?: boolean; // If true, process messages in parallel; if false, process sequentially (default: false)
 }
 
+export type TimeUnit = 'ms' | 'sec' | 'min' | 'hour';
+export type RetryStrategy = 'exponential' | 'fixed';
+
 export interface SQSConsumerOptions {
   idempotencyStore?: IdempotencyStore;
   idempotencyTtlSeconds?: number; // Default: 86400 (24 hours)
-  backoffStore?: BackoffStore;
-  backoffBaseDelay?: number; // Default: 1
+  backoffBaseDelay?: number; // Default: 5
   backoffBaseDelayUnit?: TimeUnit; // Default: 'sec'
   retryStrategy?: RetryStrategy; // Default: 'exponential'
 }
@@ -55,37 +55,20 @@ export class SQSConsumer {
   private handler: MessageHandler;
   private idempotencyStore?: IdempotencyStore;
   private idempotencyTtlSeconds: number;
-  private backoffStore?: BackoffStore;
   private backoffBaseDelay: number;
   private backoffBaseDelayUnit: TimeUnit;
   private retryStrategy: RetryStrategy;
   private isRunning = false;
-  private messagesProcessed = 0;
-  private messagesFailed = 0;
 
   constructor(config: SQSConsumerConfig, handler: MessageHandler, options?: SQSConsumerOptions) {
     this.config = config;
     this.handler = handler;
     this.idempotencyStore = options?.idempotencyStore;
     this.idempotencyTtlSeconds = options?.idempotencyTtlSeconds ?? 86400; // Default 24 hours
-    this.backoffStore = options?.backoffStore;
-    this.backoffBaseDelay = options?.backoffBaseDelay ?? 1;
+    this.backoffBaseDelay = options?.backoffBaseDelay ?? 5;
     this.backoffBaseDelayUnit = options?.backoffBaseDelayUnit ?? 'sec';
     this.retryStrategy = options?.retryStrategy ?? 'exponential';
     this.sqsClient = new SQSClient(config.sqsClientConfig || {});
-  }
-
-  private toMilliseconds(value: number, unit: TimeUnit): number {
-    switch (unit) {
-      case 'ms':
-        return value;
-      case 'sec':
-        return value * 1000;
-      case 'min':
-        return value * 60 * 1000;
-      case 'hour':
-        return value * 60 * 60 * 1000;
-    }
   }
 
   /**
@@ -114,7 +97,6 @@ export class SQSConsumer {
   async stop(): Promise<void> {
     console.log('[SQSConsumer] Stopping consumer...');
     this.isRunning = false;
-    console.log(`[SQSConsumer] Stats - Processed: ${this.messagesProcessed}, Failed: ${this.messagesFailed}`);
   }
 
   /**
@@ -125,7 +107,7 @@ export class SQSConsumer {
       try {
         const messages = await this.receiveMessages();
 
-        if (messages && messages.length > 0) {
+        if (messages.length > 0) {
           console.log(`[SQSConsumer] Received ${messages.length} message(s)`);
           await this.processMessages(messages);
         } else {
@@ -170,26 +152,22 @@ export class SQSConsumer {
 
     if (processInParallel) {
       // Parallel processing: Process all messages concurrently
-      await Promise.all(
-        messages.map(async (message) => {
-          await this.processMessage(message, successfulMessages, retryMessages, permanentFailureMessages);
-        })
+      const results = await Promise.all(
+        messages.map(async (message) => ({
+          message,
+          result: await this.processMessage(message),
+        }))
       );
+
+      // Categorize messages
+      for (const { message, result } of results) {
+        this.categorizeMessage(message, result, successfulMessages, retryMessages, permanentFailureMessages);
+      }
     } else {
       // Sequential processing: Process messages one by one
       for (const message of messages) {
-        await this.processMessage(message, successfulMessages, retryMessages, permanentFailureMessages);
-      }
-    }
-
-    // Call flush() if handler implements it (for batch processing)
-    if (this.handler.flush && successfulMessages.length > 0) {
-      try {
-        await this.handler.flush();
-      } catch (error) {
-        console.error('[SQSConsumer] Flush failed, moving all successful messages to retry:', error);
-        retryMessages.push(...successfulMessages);
-        successfulMessages.length = 0;
+        const result = await this.processMessage(message);
+        this.categorizeMessage(message, result, successfulMessages, retryMessages, permanentFailureMessages);
       }
     }
 
@@ -203,45 +181,54 @@ export class SQSConsumer {
       await this.deleteMessages(permanentFailureMessages);
     }
 
-    // Retry messages will become visible again after visibility timeout
+    // Set visibility timeout for retry messages based on backoff calculation
     if (retryMessages.length > 0) {
+      for (const message of retryMessages) {
+        try {
+          const visibilityTimeoutSeconds = this.calculateVisibilityTimeout(message);
+          await this.changeMessageVisibility(message, visibilityTimeoutSeconds);
+        } catch (error) {
+          console.error(`[SQSConsumer] Failed to set visibility timeout for message ${message.MessageId}:`, error);
+          // Continue with next message - this message will retry with default timeout
+        }
+      }
       console.warn(`[SQSConsumer] ${retryMessages.length} message(s) will be retried`);
+    }
+  }
+
+  /**
+   * Categorize message based on processing result
+   */
+  private categorizeMessage(
+    message: Message,
+    result: MessageResult,
+    successfulMessages: Message[],
+    retryMessages: Message[],
+    permanentFailureMessages: Message[]
+  ): void {
+    if (result.status === 'success') {
+      successfulMessages.push(message);
+    } else if (result.status === 'retry') {
+      retryMessages.push(message);
+    } else if (result.status === 'fail') {
+      permanentFailureMessages.push(message);
     }
   }
 
   /**
    * Process a single message
    */
-  private async processMessage(
-    message: Message,
-    successfulMessages: Message[],
-    retryMessages: Message[],
-    permanentFailureMessages: Message[]
-  ): Promise<void> {
+  private async processMessage(message: Message): Promise<MessageResult> {
     const messageId = message.MessageId || 'unknown';
-
-    // Check backoff: Is this message in backoff period?
-    if (this.backoffStore) {
-      const canProcess = await this.backoffStore.canProcess(messageId);
-      if (!canProcess) {
-        console.log(`[SQSConsumer] ⏸️  Message ${messageId} in backoff period, skipping`);
-        // Don't delete - let it become visible again after visibility timeout
-        return;
-      }
-    }
 
     // Check idempotency: Has this message been processed before?
     if (this.idempotencyStore) {
       const alreadyProcessed = await this.idempotencyStore.hasProcessed(messageId);
       if (alreadyProcessed) {
         console.log(`[SQSConsumer] ⏭️  Message ${messageId} already processed, skipping`);
-        successfulMessages.push(message); // Delete it to prevent reprocessing
-        return;
+        // Delete it to prevent reprocessing
+        return { status: 'success' };
       }
-
-      // ✅ Mark as "in-progress" BEFORE processing to prevent race conditions
-      // This prevents duplicate processing if handler is slow
-      await this.idempotencyStore.markProcessed(messageId, this.idempotencyTtlSeconds);
     }
 
     // Extract metadata from message attributes
@@ -256,36 +243,81 @@ export class SQSConsumer {
     // Process the message - handler returns result
     const result = await this.handler.handle(message, metadata);
 
-    // Handle result based on status
-    if (result.status === 'success') {
-      // Success! Clear backoff and keep idempotency record
-      if (this.backoffStore) {
-        await this.backoffStore.clear(messageId);
-      }
-      successfulMessages.push(message);
-      this.messagesProcessed++;
-      console.log(`[SQSConsumer] ✅ Successfully processed message ${messageId}`);
-    } else if (result.status === 'retry') {
-      // Retry: Remove from idempotency store and record backoff
-      if (this.idempotencyStore) {
-        await this.idempotencyStore.remove(messageId);
-      }
-      if (this.backoffStore) {
-        await this.backoffStore.recordFailure(
-          messageId,
-          this.toMilliseconds(this.backoffBaseDelay, this.backoffBaseDelayUnit),
-          this.retryStrategy
-        );
-      }
-      console.warn(`[SQSConsumer] 🔄 Retry requested for message ${messageId}${result.reason ? `: ${result.reason}` : ''}`);
-      retryMessages.push(message);
-      this.messagesFailed++;
-    } else if (result.status === 'fail') {
-      // Fail: Keep in idempotency store, delete the message (permanent failure)
-      console.error(`[SQSConsumer] 💀 Permanent failure for message ${messageId}${result.reason ? `: ${result.reason}` : ''}`);
-      permanentFailureMessages.push(message);
-      this.messagesFailed++;
+    // Retry: Don't mark in idempotency store (allow reprocessing)
+    if (result.status === 'retry') {
+      return result;
     }
+
+    // Success or Fail: Mark in idempotency store
+    if (this.idempotencyStore) {
+      await this.idempotencyStore.markProcessed(messageId, this.idempotencyTtlSeconds);
+    }
+
+    // Log based on status
+    if (result.status === 'success') {
+      console.log(`[SQSConsumer] ✅ Successfully processed message ${messageId}`);
+    } else {
+      console.error(`[SQSConsumer] 💀 Permanent failure for message ${messageId}${result.reason ? `: ${result.reason}` : ''}`);
+    }
+
+    return result;
+  }
+
+  /**
+   * Convert time value to milliseconds
+   */
+  private toMilliseconds(value: number, unit: TimeUnit): number {
+    switch (unit) {
+      case 'ms':
+        return value;
+      case 'sec':
+        return value * 1000;
+      case 'min':
+        return value * 60 * 1000;
+      case 'hour':
+        return value * 60 * 60 * 1000;
+    }
+  }
+
+  /**
+   * Calculate visibility timeout in seconds for a retry message
+   */
+  private calculateVisibilityTimeout(message: Message): number {
+    const retryCount = parseInt(message.Attributes?.ApproximateReceiveCount || '0', 10);
+    const backoffDelayMs = this.calculateBackoffDelay(retryCount);
+    return Math.min(Math.floor(backoffDelayMs / 1000), 43200); // Max 12 hours
+  }
+
+  /**
+   * Calculate backoff delay in milliseconds based on retry count
+   */
+  private calculateBackoffDelay(retryCount: number): number {
+    const baseDelayMs = this.toMilliseconds(this.backoffBaseDelay, this.backoffBaseDelayUnit);
+
+    if (this.retryStrategy === 'fixed') {
+      return baseDelayMs;
+    }
+
+    // Exponential backoff: baseDelay * 2^retryCount
+    return baseDelayMs * Math.pow(2, retryCount);
+  }
+
+  /**
+   * Change visibility timeout for a message
+   */
+  private async changeMessageVisibility(message: Message, visibilityTimeoutSeconds: number): Promise<void> {
+    if (!message.ReceiptHandle) {
+      console.warn('[SQSConsumer] Cannot change visibility: message has no receipt handle');
+      return;
+    }
+
+    const command = new ChangeMessageVisibilityCommand({
+      QueueUrl: this.config.sqsConfig.queueUrl,
+      ReceiptHandle: message.ReceiptHandle,
+      VisibilityTimeout: visibilityTimeoutSeconds,
+    });
+
+    await this.sqsClient.send(command);
   }
 
   private async deleteMessages(messages: Message[]): Promise<void> {
