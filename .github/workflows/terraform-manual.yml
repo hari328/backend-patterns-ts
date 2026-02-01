@@ -1,0 +1,65 @@
+name: Terraform Manual Deploy
+
+# Only manual trigger - no automatic runs
+on:
+  workflow_dispatch:
+    inputs:
+      terraform_action:
+        description: 'Terraform action to perform'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+      working_directory:
+        description: 'Terraform working directory (e.g., terraform/chapter-2)'
+        required: true
+        default: 'terraform/github-oidc'
+
+permissions:
+  id-token: write   # Required for OIDC
+  contents: read    # Required to checkout code
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    
+    # This environment requires manual approval!
+    environment: aws-terraform
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+          role-session-name: GitHubActions-Terraform
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: Terraform Init
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform init
+
+      - name: Terraform Plan
+        if: inputs.terraform_action == 'plan'
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform plan
+
+      - name: Terraform Apply
+        if: inputs.terraform_action == 'apply'
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform apply -auto-approve
+
+      - name: Terraform Destroy
+        if: inputs.terraform_action == 'destroy'
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform destroy -auto-approve
+
