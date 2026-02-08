@@ -136,14 +136,10 @@ module "ecs_service" {
         }
       ]
 
-      log_configuration = {
-        logDriver = "awslogs"
-        options = {
-          "awslogs-group"         = "/ecs/${var.project}-${var.environment}/${each.key}"
-          "awslogs-region"        = local.region
-          "awslogs-stream-prefix" = "ecs"
-        }
-      }
+      enable_cloudwatch_logging              = true
+      create_cloudwatch_log_group            = true
+      cloudwatch_log_group_name              = "/ecs/${var.project}-${var.environment}/${each.key}"
+      cloudwatch_log_group_retention_in_days = var.log_retention_days
     }
   }
 
@@ -164,10 +160,6 @@ module "ecs_service" {
 
   # Do not create a separate SG - we use bridge networking on EC2
   create_security_group = false
-
-  # CloudWatch log group
-  service_log_group_name         = "/ecs/${var.project}-${var.environment}/${each.key}"
-  service_log_group_retention_in_days = var.log_retention_days
 
   # IAM - Execution role (ECR pull, logs, SSM read)
   create_task_exec_iam_role = true
