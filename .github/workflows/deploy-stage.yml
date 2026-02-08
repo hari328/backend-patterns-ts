@@ -10,6 +10,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
+  ECR_REGISTRY: 550933156245.dkr.ecr.us-east-1.amazonaws.com
   CLUSTER: hari328-stage
   PROJECT: hari328-stage
 
@@ -30,151 +31,68 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: GitHubActions-Deploy
 
-      - name: Update posts-service task definition
-        id: update-posts-task-def
-        env:
-          IMAGE_TAG: ${{ github.event.inputs.image_tag }}
-        run: |
-          TASK_FAMILY="${PROJECT}-posts-service"
+      # --- Posts Service (with DB migration) ---
 
+      - name: Download posts-service task definition
+        run: |
           aws ecs describe-task-definition \
-            --task-definition "${TASK_FAMILY}" \
-            --query 'taskDefinition' \
-            --output json > /tmp/posts-task-def.json
+            --task-definition ${{ env.PROJECT }}-posts-service \
+            --query taskDefinition \
+            > posts-task-def.json
 
-          python3 -c "
-          import json, os
-          image_tag = os.environ['IMAGE_TAG']
-          with open('/tmp/posts-task-def.json') as f:
-              td = json.load(f)
-          old_image = td['containerDefinitions'][0]['image']
-          new_image = old_image.rsplit(':', 1)[0] + ':' + image_tag
-          td['containerDefinitions'][0]['image'] = new_image
-          for key in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy','deregisteredAt','enableFaultInjection']:
-              td.pop(key, None)
-          with open('/tmp/posts-task-def-new.json', 'w') as f:
-              json.dump(td, f)
-          print(f'Updated image: {new_image}')
-          "
-
-          NEW_TASK_ARN=$(aws ecs register-task-definition \
-            --cli-input-json file:///tmp/posts-task-def-new.json \
-            --query 'taskDefinition.taskDefinitionArn' \
-            --output text)
-
-          echo "Registered new posts-service task definition: ${NEW_TASK_ARN}"
-          echo "task_arn=${NEW_TASK_ARN}" >> $GITHUB_OUTPUT
-
-      - name: Run DB Migrations
-        run: |
-          echo "Running DB migrations via ECS run-task..."
-          TASK_ARN=$(aws ecs run-task \
-            --cluster ${{ env.CLUSTER }} \
-            --task-definition ${{ steps.update-posts-task-def.outputs.task_arn }} \
-            --capacity-provider-strategy capacityProvider=ec2-ondemand,weight=1 \
-            --overrides '{
-              "containerOverrides": [{
-                "name": "posts-service",
-                "command": ["sh", "-c", "mkdir -p /root/.local/share && npm run db:migrate --workspace=@repo/database"]
-              }]
-            }' \
-            --query 'tasks[0].taskArn' \
-            --output text)
-
-          echo "Migration task: ${TASK_ARN}"
-          echo "Waiting for migration to complete..."
-
-          aws ecs wait tasks-stopped \
-            --cluster ${{ env.CLUSTER }} \
-            --tasks "${TASK_ARN}"
-
-          EXIT_CODE=$(aws ecs describe-tasks \
-            --cluster ${{ env.CLUSTER }} \
-            --tasks "${TASK_ARN}" \
-            --query 'tasks[0].containers[0].exitCode' \
-            --output text)
-
-          echo "Migration exit code: ${EXIT_CODE}"
-          if [ "${EXIT_CODE}" != "0" ]; then
-            echo "::error::DB migration failed with exit code ${EXIT_CODE}"
-            exit 1
-          fi
-          echo "DB migrations completed successfully."
+      - name: Render posts-service image
+        id: render-posts
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: posts-task-def.json
+          container-name: posts-service
+          image: ${{ env.ECR_REGISTRY }}/${{ env.PROJECT }}-posts-service:${{ inputs.image_tag }}
 
       - name: Deploy posts-service
-        run: |
-          aws ecs update-service \
-            --cluster ${{ env.CLUSTER }} \
-            --service "${PROJECT}-posts-service" \
-            --task-definition ${{ steps.update-posts-task-def.outputs.task_arn }} \
-            --force-new-deployment \
-            --no-cli-pager
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-posts.outputs.task-definition }}
+          service: ${{ env.PROJECT }}-posts-service
+          cluster: ${{ env.CLUSTER }}
+          force-new-deployment: true
+          wait-for-service-stability: true
+          run-task: true
+          wait-for-task-stopped: true
+          run-task-container-overrides: >-
+            [{"name":"posts-service","command":["sh","-c","mkdir -p /root/.local/share && npm run db:migrate --workspace=@repo/database"]}]
+          run-task-capacity-provider-strategy: >-
+            [{"capacityProvider":"ec2-ondemand","weight":1}]
 
-          echo "posts-service deployment initiated."
+      # --- Recommender Service ---
+
+      - name: Download recommender-service task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ env.PROJECT }}-recommender-service \
+            --query taskDefinition \
+            > recommender-task-def.json
+
+      - name: Render recommender-service image
+        id: render-recommender
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: recommender-task-def.json
+          container-name: recommender-service
+          image: ${{ env.ECR_REGISTRY }}/${{ env.PROJECT }}-recommender-service:${{ inputs.image_tag }}
 
       - name: Deploy recommender-service
-        env:
-          IMAGE_TAG: ${{ github.event.inputs.image_tag }}
-        run: |
-          TASK_FAMILY="${PROJECT}-recommender-service"
-
-          aws ecs describe-task-definition \
-            --task-definition "${TASK_FAMILY}" \
-            --query 'taskDefinition' \
-            --output json > /tmp/recommender-task-def.json
-
-          python3 -c "
-          import json, os
-          image_tag = os.environ['IMAGE_TAG']
-          with open('/tmp/recommender-task-def.json') as f:
-              td = json.load(f)
-          old_image = td['containerDefinitions'][0]['image']
-          new_image = old_image.rsplit(':', 1)[0] + ':' + image_tag
-          td['containerDefinitions'][0]['image'] = new_image
-          for key in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy','deregisteredAt','enableFaultInjection']:
-              td.pop(key, None)
-          with open('/tmp/recommender-task-def-new.json', 'w') as f:
-              json.dump(td, f)
-          print(f'Updated image: {new_image}')
-          "
-
-          NEW_TASK_ARN=$(aws ecs register-task-definition \
-            --cli-input-json file:///tmp/recommender-task-def-new.json \
-            --query 'taskDefinition.taskDefinitionArn' \
-            --output text)
-
-          echo "Registered new task definition: ${NEW_TASK_ARN}"
-
-          aws ecs update-service \
-            --cluster ${{ env.CLUSTER }} \
-            --service "${TASK_FAMILY}" \
-            --task-definition "${NEW_TASK_ARN}" \
-            --force-new-deployment \
-            --no-cli-pager
-
-          echo "recommender-service deployment initiated."
-
-      - name: Wait for services to stabilize
-        run: |
-          echo "Waiting for posts-service to stabilize..."
-          aws ecs wait services-stable \
-            --cluster ${{ env.CLUSTER }} \
-            --services "${PROJECT}-posts-service"
-
-          echo "Waiting for recommender-service to stabilize..."
-          aws ecs wait services-stable \
-            --cluster ${{ env.CLUSTER }} \
-            --services "${PROJECT}-recommender-service"
-
-          echo "All services are stable."
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-recommender.outputs.task-definition }}
+          service: ${{ env.PROJECT }}-recommender-service
+          cluster: ${{ env.CLUSTER }}
+          force-new-deployment: true
+          wait-for-service-stability: true
 
       - name: Summary
-        env:
-          IMAGE_TAG: ${{ github.event.inputs.image_tag }}
         run: |
           echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "| Service | Image Tag | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|-----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| posts-service | \`${IMAGE_TAG}\` | ✅ Deployed |" >> $GITHUB_STEP_SUMMARY
-          echo "| recommender-service | \`${IMAGE_TAG}\` | ✅ Deployed |" >> $GITHUB_STEP_SUMMARY
-
+          echo "| posts-service | \`${{ inputs.image_tag }}\` | ✅ Deployed |" >> $GITHUB_STEP_SUMMARY
+          echo "| recommender-service | \`${{ inputs.image_tag }}\` | ✅ Deployed |" >> $GITHUB_STEP_SUMMARY
