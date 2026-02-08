@@ -4,6 +4,11 @@ include "root" {
 
 terraform {
   source = "../../../modules/rds"
+
+  before_hook "build_lambda" {
+    commands = ["init", "plan", "apply"]
+    execute  = ["bash", "-c", "cd ${get_terragrunt_dir()}/../../../modules/rds/lambda && npm install --omit=dev && cd .. && mkdir -p lambda_dist && cd lambda && zip -r ../lambda_dist/bootstrap.zip . -x '.*'"]
+  }
 }
 
 dependency "base_data" {

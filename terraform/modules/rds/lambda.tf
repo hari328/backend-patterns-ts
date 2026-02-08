@@ -4,36 +4,6 @@
 ################################################################################
 
 ################################################################################
-# Build: copy source to build dir, install deps, then zip
-################################################################################
-
-resource "null_resource" "lambda_build" {
-  triggers = {
-    source_hash = filesha256("${path.module}/lambda/index.mjs")
-    deps_hash   = filesha256("${path.module}/lambda/package.json")
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      rm -rf ${path.module}/lambda_build
-      mkdir -p ${path.module}/lambda_build
-      cp ${path.module}/lambda/index.mjs ${path.module}/lambda_build/
-      cp ${path.module}/lambda/package.json ${path.module}/lambda_build/
-      cd ${path.module}/lambda_build && npm install --omit=dev
-    EOT
-    interpreter = ["bash", "-c"]
-  }
-}
-
-data "archive_file" "lambda" {
-  type        = "zip"
-  source_dir  = "${path.module}/lambda_build"
-  output_path = "${path.module}/lambda_dist/bootstrap.zip"
-
-  depends_on = [null_resource.lambda_build]
-}
-
-################################################################################
 # IAM Role
 ################################################################################
 
@@ -117,8 +87,8 @@ resource "aws_lambda_function" "bootstrap" {
   timeout       = 30
   memory_size   = 128
 
-  filename         = data.archive_file.lambda.output_path
-  source_code_hash = data.archive_file.lambda.output_base64sha256
+  filename         = "${path.module}/lambda_dist/bootstrap.zip"
+  source_code_hash = filebase64sha256("${path.module}/lambda_dist/bootstrap.zip")
 
   vpc_config {
     subnet_ids         = var.private_subnet_ids
