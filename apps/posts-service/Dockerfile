@@ -8,6 +8,8 @@ COPY turbo.json ./
 COPY packages ./packages
 COPY apps/posts-service ./apps/posts-service
 
+RUN mkdir -p /root/.local/share
+
 RUN npm install
 
 RUN npx turbo build --filter=posts-service
