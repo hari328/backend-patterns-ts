@@ -17,6 +17,7 @@ export class PostsService {
       throw new Error('Caption must not exceed 3000 characters');
     }
 
+    // just a comment
     const user = await this.repository.findUserById(userId);
 
     if (!user) {
