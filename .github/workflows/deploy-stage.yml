@@ -37,29 +37,30 @@ jobs:
         run: |
           TASK_FAMILY="${PROJECT}-posts-service"
 
-          TASK_DEF=$(aws ecs describe-task-definition \
+          aws ecs describe-task-definition \
             --task-definition "${TASK_FAMILY}" \
             --query 'taskDefinition' \
-            --output json)
+            --output json > /tmp/posts-task-def.json
 
-          NEW_IMAGE=$(echo "${TASK_DEF}" | \
-            python3 -c "import sys,json; td=json.load(sys.stdin); img=td['containerDefinitions'][0]['image']; print(img.rsplit(':',1)[0] + ':' + '${IMAGE_TAG}')")
-
-          NEW_TASK_DEF=$(echo "${TASK_DEF}" | \
-            python3 -c "
-          import sys, json
-          td = json.load(sys.stdin)
-          td['containerDefinitions'][0]['image'] = '${NEW_IMAGE}'
-          for key in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy']:
+          python3 -c "
+          import json, os
+          image_tag = os.environ['IMAGE_TAG']
+          with open('/tmp/posts-task-def.json') as f:
+              td = json.load(f)
+          old_image = td['containerDefinitions'][0]['image']
+          new_image = old_image.rsplit(':', 1)[0] + ':' + image_tag
+          td['containerDefinitions'][0]['image'] = new_image
+          for key in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy','deregisteredAt','enableFaultInjection']:
               td.pop(key, None)
-          print(json.dumps(td))
-          ")
+          with open('/tmp/posts-task-def-new.json', 'w') as f:
+              json.dump(td, f)
+          print(f'Updated image: {new_image}')
+          "
 
-          NEW_TASK_ARN=$(echo "${NEW_TASK_DEF}" | \
-            aws ecs register-task-definition \
-              --cli-input-json file:///dev/stdin \
-              --query 'taskDefinition.taskDefinitionArn' \
-              --output text)
+          NEW_TASK_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/posts-task-def-new.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
 
           echo "Registered new posts-service task definition: ${NEW_TASK_ARN}"
           echo "task_arn=${NEW_TASK_ARN}" >> $GITHUB_OUTPUT
@@ -116,31 +117,31 @@ jobs:
           IMAGE_TAG: ${{ github.event.inputs.image_tag }}
         run: |
           TASK_FAMILY="${PROJECT}-recommender-service"
-          CONTAINER_NAME="recommender-service"
 
-          TASK_DEF=$(aws ecs describe-task-definition \
+          aws ecs describe-task-definition \
             --task-definition "${TASK_FAMILY}" \
             --query 'taskDefinition' \
-            --output json)
+            --output json > /tmp/recommender-task-def.json
 
-          NEW_IMAGE=$(echo "${TASK_DEF}" | \
-            python3 -c "import sys,json; td=json.load(sys.stdin); img=td['containerDefinitions'][0]['image']; print(img.rsplit(':',1)[0] + ':' + '${IMAGE_TAG}')")
-
-          NEW_TASK_DEF=$(echo "${TASK_DEF}" | \
-            python3 -c "
-          import sys, json
-          td = json.load(sys.stdin)
-          td['containerDefinitions'][0]['image'] = '${NEW_IMAGE}'
-          for key in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy']:
+          python3 -c "
+          import json, os
+          image_tag = os.environ['IMAGE_TAG']
+          with open('/tmp/recommender-task-def.json') as f:
+              td = json.load(f)
+          old_image = td['containerDefinitions'][0]['image']
+          new_image = old_image.rsplit(':', 1)[0] + ':' + image_tag
+          td['containerDefinitions'][0]['image'] = new_image
+          for key in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy','deregisteredAt','enableFaultInjection']:
               td.pop(key, None)
-          print(json.dumps(td))
-          ")
+          with open('/tmp/recommender-task-def-new.json', 'w') as f:
+              json.dump(td, f)
+          print(f'Updated image: {new_image}')
+          "
 
-          NEW_TASK_ARN=$(echo "${NEW_TASK_DEF}" | \
-            aws ecs register-task-definition \
-              --cli-input-json file:///dev/stdin \
-              --query 'taskDefinition.taskDefinitionArn' \
-              --output text)
+          NEW_TASK_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/recommender-task-def-new.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
 
           echo "Registered new task definition: ${NEW_TASK_ARN}"
 
