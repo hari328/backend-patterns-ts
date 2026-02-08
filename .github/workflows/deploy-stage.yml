@@ -30,12 +30,46 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: GitHubActions-Deploy
 
+      - name: Update posts-service task definition
+        id: update-posts-task-def
+        env:
+          IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+        run: |
+          TASK_FAMILY="${PROJECT}-posts-service"
+
+          TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition "${TASK_FAMILY}" \
+            --query 'taskDefinition' \
+            --output json)
+
+          NEW_IMAGE=$(echo "${TASK_DEF}" | \
+            python3 -c "import sys,json; td=json.load(sys.stdin); img=td['containerDefinitions'][0]['image']; print(img.rsplit(':',1)[0] + ':' + '${IMAGE_TAG}')")
+
+          NEW_TASK_DEF=$(echo "${TASK_DEF}" | \
+            python3 -c "
+          import sys, json
+          td = json.load(sys.stdin)
+          td['containerDefinitions'][0]['image'] = '${NEW_IMAGE}'
+          for key in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy']:
+              td.pop(key, None)
+          print(json.dumps(td))
+          ")
+
+          NEW_TASK_ARN=$(echo "${NEW_TASK_DEF}" | \
+            aws ecs register-task-definition \
+              --cli-input-json file:///dev/stdin \
+              --query 'taskDefinition.taskDefinitionArn' \
+              --output text)
+
+          echo "Registered new posts-service task definition: ${NEW_TASK_ARN}"
+          echo "task_arn=${NEW_TASK_ARN}" >> $GITHUB_OUTPUT
+
       - name: Run DB Migrations
         run: |
           echo "Running DB migrations via ECS run-task..."
           TASK_ARN=$(aws ecs run-task \
             --cluster ${{ env.CLUSTER }} \
-            --task-definition ${{ env.PROJECT }}-posts-service \
+            --task-definition ${{ steps.update-posts-task-def.outputs.task_arn }} \
             --capacity-provider-strategy capacityProvider=ec2-ondemand,weight=1 \
             --overrides '{
               "containerOverrides": [{
@@ -67,42 +101,11 @@ jobs:
           echo "DB migrations completed successfully."
 
       - name: Deploy posts-service
-        env:
-          IMAGE_TAG: ${{ github.event.inputs.image_tag }}
         run: |
-          TASK_FAMILY="${PROJECT}-posts-service"
-          CONTAINER_NAME="posts-service"
-
-          TASK_DEF=$(aws ecs describe-task-definition \
-            --task-definition "${TASK_FAMILY}" \
-            --query 'taskDefinition' \
-            --output json)
-
-          NEW_IMAGE=$(echo "${TASK_DEF}" | \
-            python3 -c "import sys,json; td=json.load(sys.stdin); img=td['containerDefinitions'][0]['image']; print(img.rsplit(':',1)[0] + ':' + '${IMAGE_TAG}')")
-
-          NEW_TASK_DEF=$(echo "${TASK_DEF}" | \
-            python3 -c "
-          import sys, json
-          td = json.load(sys.stdin)
-          td['containerDefinitions'][0]['image'] = '${NEW_IMAGE}'
-          for key in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy']:
-              td.pop(key, None)
-          print(json.dumps(td))
-          ")
-
-          NEW_TASK_ARN=$(echo "${NEW_TASK_DEF}" | \
-            aws ecs register-task-definition \
-              --cli-input-json file:///dev/stdin \
-              --query 'taskDefinition.taskDefinitionArn' \
-              --output text)
-
-          echo "Registered new task definition: ${NEW_TASK_ARN}"
-
           aws ecs update-service \
             --cluster ${{ env.CLUSTER }} \
-            --service "${TASK_FAMILY}" \
-            --task-definition "${NEW_TASK_ARN}" \
+            --service "${PROJECT}-posts-service" \
+            --task-definition ${{ steps.update-posts-task-def.outputs.task_arn }} \
             --force-new-deployment \
             --no-cli-pager
 
