@@ -10,8 +10,9 @@ COPY apps/posts-service ./apps/posts-service
 
 RUN npm install
 
+RUN npx turbo build --filter=posts-service
+
 WORKDIR /app/apps/posts-service
-RUN npm run build
 
 EXPOSE 3000
 
