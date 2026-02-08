@@ -24,7 +24,7 @@ locals {
 resource "aws_lb_target_group" "this" {
   for_each = var.services
 
-  name        = "${var.project}-${var.environment}-${each.key}"
+  name        = substr("${var.project}-${var.environment}-${each.key}", 0, 32)
   port        = each.value.container_port
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
@@ -167,7 +167,7 @@ module "ecs_service" {
 
   # IAM - Task role (SQS permissions for the container)
   create_tasks_iam_role = true
-  tasks_iam_role_name   = "${var.project}-${var.environment}-${each.key}-task"
+  tasks_iam_role_name   = "${var.project}-${var.environment}-${each.key}"
   tasks_iam_role_statements = concat(
     length(each.value.sqs_publish_arns) > 0 ? [{
       actions   = ["sqs:SendMessage"]
