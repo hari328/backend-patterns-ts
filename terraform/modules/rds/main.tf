@@ -39,7 +39,7 @@ resource "aws_db_subnet_group" "this" {
 
 resource "aws_security_group" "rds" {
   name        = "${var.project}-${var.environment}-rds"
-  description = "RDS PostgreSQL — inbound 5432 from VPC"
+  description = "RDS PostgreSQL - inbound 5432 from VPC"
   vpc_id      = var.vpc_id
 
   tags = {

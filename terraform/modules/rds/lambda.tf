@@ -81,7 +81,7 @@ resource "aws_iam_role_policy" "lambda" {
 
 resource "aws_security_group" "lambda" {
   name        = "${var.project}-${var.environment}-rds-bootstrap-lambda"
-  description = "Lambda bootstrap — outbound to RDS"
+  description = "Lambda bootstrap - outbound to RDS"
   vpc_id      = var.vpc_id
 
   tags = {
