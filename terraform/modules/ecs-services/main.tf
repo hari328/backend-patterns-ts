@@ -109,10 +109,11 @@ module "ecs_service" {
   # Container definition
   container_definitions = {
     (each.key) = {
-      essential = true
-      image     = "${var.repository_urls[each.key]}:${var.image_tag}"
-      cpu       = each.value.cpu
-      memory    = each.value.memory
+      essential                = true
+      image                    = "${var.repository_urls[each.key]}:${var.image_tag}"
+      cpu                      = each.value.cpu
+      memory                   = each.value.memory
+      readonly_root_filesystem = false
 
       port_mappings = [
         {

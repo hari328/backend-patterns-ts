@@ -40,3 +40,6 @@ yarn-error.log*
 # Terraform Lambda build artifacts
 terraform/modules/rds/lambda_build/
 terraform/modules/rds/lambda_dist/
+
+
+stage-creds.txt
