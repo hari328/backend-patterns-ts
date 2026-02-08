@@ -289,3 +289,19 @@ This creates **defense in depth**:
 5. 🔒 Later: Restrict IAM role permissions from AdministratorAccess to specific services
 
 ---
+
+## ✅ Setup Complete!
+
+If you successfully ran `terraform plan` in the `terraform/test-connection` directory and saw output like:
+
+```
+caller_arn = "arn:aws:sts::YOUR_ACCOUNT_ID:assumed-role/github-actions-role/GitHubActions-Terraform"
+```
+
+**Congratulations!** Your GitHub OIDC → AWS connection is working. You can now:
+
+- Create Terraform configurations in new directories (e.g., `terraform/chapter-2`)
+- Run them via GitHub Actions with manual approval
+- No AWS credentials stored in GitHub - everything uses OIDC!
+
+---
