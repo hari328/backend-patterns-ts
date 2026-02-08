@@ -171,3 +171,38 @@ Push to main
 6. Route53 record               (needs ALB from Layer 1 SSM)
 7. CI/CD pipeline               (needs ECR repos, ECS cluster/services)
 ```
+
+### Batching strategy
+
+```mermaid
+graph TD
+    subgraph Batch1["Batch 1 — No dependencies, deploy in parallel"]
+        ECR["1. ECR<br/>(container registries)"]
+        SQS["3. SQS<br/>(posts-stream + DLQ)"]
+        RDS["2. RDS PostgreSQL<br/>(needs Layer 1 SSM only)"]
+        Redis["4. ElastiCache Redis<br/>(needs Layer 1 SSM only)"]
+    end
+
+    subgraph Batch2["Batch 2 — Needs Batch 1 outputs"]
+        ECS["5. ECS Services<br/>(posts + recommender)"]
+        R53["6. Route53 record<br/>(api.hari328.net)"]
+    end
+
+    subgraph Batch3["Batch 3 — Needs Batch 2"]
+        CICD["7. CI/CD Pipeline<br/>(GitHub Actions)"]
+    end
+
+    ECR --> ECS
+    RDS --> ECS
+    SQS --> ECS
+    Redis --> ECS
+    ECS --> R53
+    ECS --> CICD
+    R53 --> CICD
+```
+
+| Batch | Modules | Notes |
+|-------|---------|-------|
+| **1** | ECR, RDS, SQS, ElastiCache | All independent — `terragrunt run-all apply` |
+| **2** | ECS Services, Route53 | Needs Batch 1 outputs (ECR URIs, RDS endpoint, SQS URL, Redis endpoint) |
+| **3** | CI/CD Pipeline | GitHub Actions workflow — needs ECR repos + ECS services to exist |
