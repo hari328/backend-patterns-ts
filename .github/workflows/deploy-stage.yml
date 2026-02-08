@@ -75,7 +75,7 @@ jobs:
             --overrides '{
               "containerOverrides": [{
                 "name": "posts-service",
-                "command": ["sh", "-c", "npm run db:migrate --workspace=@repo/database"]
+                "command": ["sh", "-c", "mkdir -p /root/.local/share && npm run db:migrate --workspace=@repo/database"]
               }]
             }' \
             --query 'tasks[0].taskArn' \
