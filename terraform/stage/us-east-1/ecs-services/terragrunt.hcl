@@ -46,9 +46,10 @@ inputs = {
       health_check_path = "/health"
       priority          = 100
       environment = {
-        NODE_ENV   = "production"
-        PORT       = "3000"
-        AWS_REGION = "us-east-1"
+        NODE_ENV                   = "production"
+        PORT                       = "3000"
+        AWS_REGION                 = "us-east-1"
+        NODE_TLS_REJECT_UNAUTHORIZED = "0"
       }
       ssm_secrets = {
         DATABASE_URL               = "/app/db-readwrite-url"
@@ -67,9 +68,10 @@ inputs = {
       health_check_path = "/health"
       priority          = 200
       environment = {
-        NODE_ENV   = "production"
-        PORT       = "6000"
-        AWS_REGION = "us-east-1"
+        NODE_ENV                   = "production"
+        PORT                       = "6000"
+        AWS_REGION                 = "us-east-1"
+        NODE_TLS_REJECT_UNAUTHORIZED = "0"
       }
       ssm_secrets = {
         DATABASE_URL               = "/app/db-readwrite-url"
