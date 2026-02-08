@@ -3,11 +3,11 @@ include "root" {
 }
 
 terraform {
-  source = "../../../../modules/rds"
+  source = "../../../modules/rds"
 }
 
 dependency "base_data" {
-  config_path = "../../base-data"
+  config_path = "../base-data"
 }
 
 inputs = {
