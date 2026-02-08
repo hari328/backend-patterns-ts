@@ -9,7 +9,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'turbo.json'
-
+      - '.github/workflows/**'
 env:
   AWS_REGION: us-east-1
   PROJECT: hari328-stage
