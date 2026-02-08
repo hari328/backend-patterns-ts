@@ -17,8 +17,9 @@ COPY apps/recommender-service ./apps/recommender-service
 RUN npm install
 
 # Build the app
+RUN npx turbo build --filter=recommender-service
+
 WORKDIR /app/apps/recommender-service
-RUN npm run build
 
 # Production stage
 FROM node:20-alpine AS runner
