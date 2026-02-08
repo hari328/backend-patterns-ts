@@ -4,7 +4,7 @@
 ################################################################################
 
 ################################################################################
-# Build: install deps + zip
+# Build: copy source to build dir, install deps, then zip
 ################################################################################
 
 resource "null_resource" "lambda_build" {
@@ -14,14 +14,20 @@ resource "null_resource" "lambda_build" {
   }
 
   provisioner "local-exec" {
-    command     = "cd ${path.module}/lambda && npm install --omit=dev"
+    command = <<-EOT
+      rm -rf ${path.module}/lambda_build
+      mkdir -p ${path.module}/lambda_build
+      cp ${path.module}/lambda/index.mjs ${path.module}/lambda_build/
+      cp ${path.module}/lambda/package.json ${path.module}/lambda_build/
+      cd ${path.module}/lambda_build && npm install --omit=dev
+    EOT
     interpreter = ["bash", "-c"]
   }
 }
 
 data "archive_file" "lambda" {
   type        = "zip"
-  source_dir  = "${path.module}/lambda"
+  source_dir  = "${path.module}/lambda_build"
   output_path = "${path.module}/lambda_dist/bootstrap.zip"
 
   depends_on = [null_resource.lambda_build]
