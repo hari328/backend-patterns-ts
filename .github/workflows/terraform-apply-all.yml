@@ -1,0 +1,100 @@
+name: Terragrunt Apply All
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - aws-stage
+
+env:
+  AWS_REGION: us-east-1
+  BASE_DIR: terraform/stage/us-east-1
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # ── Batch 0: base-data (reads SSM from base-infra) ──
+  batch-0:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+          terraform_wrapper: false
+      - uses: autero1/action-terragrunt@v3
+        with:
+          terragrunt-version: 0.68.9
+      - name: Apply base-data
+        working-directory: ${{ env.BASE_DIR }}/base-data
+        run: |
+          terragrunt init --terragrunt-non-interactive --terragrunt-source-update
+          terragrunt apply -auto-approve --terragrunt-non-interactive --terragrunt-source-update
+
+  # ── Batch 1: ecr, sqs, rds, elasticache (parallel) ──
+  batch-1:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    needs: [batch-0]
+    strategy:
+      matrix:
+        module: [ecr, sqs, rds, elasticache]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+          terraform_wrapper: false
+      - uses: autero1/action-terragrunt@v3
+        with:
+          terragrunt-version: 0.68.9
+      - name: Apply ${{ matrix.module }}
+        working-directory: ${{ env.BASE_DIR }}/${{ matrix.module }}
+        run: |
+          terragrunt init --terragrunt-non-interactive --terragrunt-source-update
+          terragrunt apply -auto-approve --terragrunt-non-interactive --terragrunt-source-update
+
+  # ── Batch 2: ecs-services, route53 (parallel) ──
+  batch-2:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    needs: [batch-1]
+    strategy:
+      matrix:
+        module: [ecs-services, route53]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+          terraform_wrapper: false
+      - uses: autero1/action-terragrunt@v3
+        with:
+          terragrunt-version: 0.68.9
+      - name: Apply ${{ matrix.module }}
+        working-directory: ${{ env.BASE_DIR }}/${{ matrix.module }}
+        run: |
+          terragrunt init --terragrunt-non-interactive --terragrunt-source-update
+          terragrunt apply -auto-approve --terragrunt-non-interactive --terragrunt-source-update
+
