@@ -1,0 +1,90 @@
+%% Full deployment architecture for backend-patterns-ts
+%% Open each section in https://mermaid.live or VS Code Mermaid preview
+%% Each diagram is separated by a comment block
+
+%% ===================================================================
+%% DIAGRAM 1: Terraform Module Dependency & Batching
+%% ===================================================================
+
+graph TD
+    subgraph "Batch 1 - No dependencies, deploy in parallel"
+        style Batch1 fill:#e8f5e9,stroke:#4caf50
+        ECR["1. ECR<br/>(container registries)"]
+        SQS["3. SQS<br/>(posts-stream + DLQ)"]
+        RDS["2. RDS PostgreSQL<br/>(needs Layer 1 SSM only)"]
+        Redis["4. ElastiCache Redis<br/>(needs Layer 1 SSM only)"]
+    end
+
+    subgraph "Batch 2 - Needs Batch 1 outputs"
+        style Batch2 fill:#fff3e0,stroke:#ff9800
+        ECS["5. ECS Services<br/>(posts + recommender)"]
+        R53["6. Route53 record<br/>(api.hari328.net)"]
+    end
+
+    subgraph "Batch 3 - CI/CD"
+        style Batch3 fill:#e3f2fd,stroke:#2196f3
+        CICD["7. GitHub Actions<br/>(build, migrate, deploy)"]
+    end
+
+    ECR --> ECS
+    RDS --> ECS
+    SQS --> ECS
+    Redis --> ECS
+    ECS --> R53
+    ECS --> CICD
+    R53 --> CICD
+
+%% ===================================================================
+%% DIAGRAM 2: Request Flow (copy from here to mermaid.live)
+%% ===================================================================
+%%
+%% graph LR
+%%     Client["Client<br/>(browser/mobile)"] -->|HTTPS| ALB["ALB<br/>api.hari328.net"]
+%%     ALB -->|"/api/posts/*"| PostsTG["Target Group<br/>:3000"]
+%%     ALB -->|"/api/hashtags/*"| RecTG["Target Group<br/>:6000"]
+%%     PostsTG --> Posts["posts-service<br/>ECS Task"]
+%%     RecTG --> Rec["recommender-service<br/>ECS Task"]
+%%     Posts -->|publish POST_CREATED| SQS["SQS<br/>posts-stream"]
+%%     SQS -->|consume| Rec
+%%     Posts --> DB[(RDS PostgreSQL<br/>social_media_db)]
+%%     Rec --> DB
+%%     Rec --> Cache[(ElastiCache Redis)]
+
+%% ===================================================================
+%% DIAGRAM 3: ECS Resources Per Service (copy from here to mermaid.live)
+%% ===================================================================
+%%
+%% graph TD
+%%     subgraph "Per Service (x2)"
+%%         LG["CloudWatch<br/>Log Group"] --> TD["Task Definition"]
+%%         ExecRole["IAM Execution Role<br/>(ECR pull, logs, SSM read)"] --> TD
+%%         TaskRole["IAM Task Role<br/>(SQS send/recv)"] --> TD
+%%         TD --> SVC["ECS Service<br/>(desired count, rolling deploy)"]
+%%         SG["Security Group<br/>(ALB inbound, RDS/Redis outbound)"] --> SVC
+%%         TG["Target Group<br/>(/health check)"] --> SVC
+%%         TG --> LR["ALB Listener Rule<br/>(path-based routing)"]
+%%     end
+
+%% ===================================================================
+%% DIAGRAM 4: CI/CD Pipeline (copy from here to mermaid.live)
+%% ===================================================================
+%%
+%% graph TD
+%%     Merge["PR merged to main"] --> Auth["OIDC<br/>Assume IAM role in 550933156245"]
+%%     Auth --> Build["Build Docker images<br/>(posts-service + recommender-service)"]
+%%     Build --> Push["Push to ECR<br/>tag: git-SHA + latest"]
+%%     Push --> Migrate["Run DB migrations<br/>ECS run-task with CMD override"]
+%%     Migrate --> TaskDef["Register new task definition<br/>(same config, new image tag)"]
+%%     TaskDef --> Deploy["aws ecs update-service<br/>--force-new-deployment"]
+%%     Deploy --> Rolling["Rolling deploy<br/>new tasks start, health check, old tasks drain"]
+
+%% ===================================================================
+%% DIAGRAM 5: Network / Security Group Flow (copy from here to mermaid.live)
+%% ===================================================================
+%%
+%% graph TD
+%%     Internet["Internet"] --> ALB["ALB<br/>(public subnets)<br/>Layer 1 SG"]
+%%     ALB -->|"inbound :3000/:6000"| TaskSG["ECS Task SG<br/>(private subnets)"]
+%%     TaskSG -->|"outbound :5432"| RDSSG["RDS SG"]
+%%     TaskSG -->|"outbound :6379"| RedisSG["Redis SG"]
+%%     TaskSG -->|"outbound :443 via NAT"| AWS["AWS APIs<br/>(SQS, SSM, CloudWatch)"]
