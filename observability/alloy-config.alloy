@@ -1,0 +1,53 @@
+// Discover all Docker containers on this host
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// Convert Docker __meta_* labels into real stream labels.
+// Without this, streams have no labels and Loki rejects them.
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    target_label  = "container_name"
+  }
+}
+
+// Read stdout/stderr logs from discovered containers
+loki.source.docker "default" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  forward_to = [loki.process.json_logs.receiver]
+}
+
+// Parse structured JSON logs and extract labels for Loki indexing.
+// Our Winston logger outputs: {"level":"info","message":"...","service":"posts-service",...}
+// We promote level, service, and component to Loki labels so they're fast to filter on.
+loki.process "json_logs" {
+  forward_to = [loki.write.loki.receiver]
+
+  stage.json {
+    expressions = {
+      level     = "level",
+      service   = "service",
+      component = "component",
+    }
+  }
+
+  stage.labels {
+    values = {
+      level     = "",
+      service   = "",
+      component = "",
+    }
+  }
+}
+
+// Push processed logs to Loki
+loki.write "loki" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+

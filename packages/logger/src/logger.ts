@@ -12,23 +12,10 @@ function extractError(error: unknown): Record<string, unknown> {
   return { message: String(error) };
 }
 
-function buildFormat(environment: string): winston.Logform.Format {
-  const isProduction = environment !== 'development';
-
-  if (isProduction) {
-    return winston.format.combine(
-      winston.format.timestamp(),
-      winston.format.json(),
-    );
-  }
-
+function buildFormat(): winston.Logform.Format {
   return winston.format.combine(
     winston.format.timestamp(),
-    winston.format.printf(({ timestamp, level, message, service, environment: env, component, ...rest }) => {
-      const prefix = component ? `[${component}] ` : '';
-      const meta = Object.keys(rest).length > 0 ? ` ${JSON.stringify(rest)}` : '';
-      return `${timestamp} ${level}: ${prefix}${message}${meta}`;
-    }),
+    winston.format.json(),
   );
 }
 
@@ -77,7 +64,7 @@ export function createLogger(config: LoggerConfig, options?: LoggerOptions): Log
 
   const winstonLogger = winston.createLogger({
     level,
-    format: buildFormat(environment),
+    format: buildFormat(),
     defaultMeta: { service: config.service, environment },
     transports: options?.transports ?? [new winston.transports.Console()],
   });

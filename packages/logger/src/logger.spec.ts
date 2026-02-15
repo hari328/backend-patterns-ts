@@ -207,7 +207,7 @@ describe('createLogger', () => {
       expect(parsed).toHaveProperty('message', 'hello');
     });
 
-    it('outputs human-readable format in development', () => {
+    it('outputs JSON in development too', () => {
       const stdoutChunks: string[] = [];
       const devTransport = new winston.transports.Stream({
         stream: new (require('stream').Writable)({
@@ -226,8 +226,8 @@ describe('createLogger', () => {
       logger.info('hello');
 
       expect(stdoutChunks).toHaveLength(1);
-      const output = stdoutChunks[0]!;
-      expect(() => JSON.parse(output)).toThrow();
+      const parsed = JSON.parse(stdoutChunks[0]!);
+      expect(parsed).toHaveProperty('message', 'hello');
     });
   });
 });
