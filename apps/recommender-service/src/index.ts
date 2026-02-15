@@ -1,31 +1,32 @@
 import express from 'express';
 import { SQSConsumer } from '@repo/sqs-consumer';
+import { metricsMiddleware, metricsEndpoint } from '@repo/metrics';
 import { env, postsStreamQueueConfig } from './config/env';
 import { PostCreatedHandler } from './handlers/post-created.handler';
 import { HashtagsController } from './controllers/hashtags.controller';
 import { HashtagService } from './services/hashtag.service';
 import { HashtagsRepository } from './repositories/hashtags.repository';
 import { logger } from './logger';
+import { registry } from './metrics';
 
 async function main() {
   logger.info('Starting', { environment: env.NODE_ENV, port: env.PORT });
 
-  // Initialize Express app
   const app = express();
   app.use(express.json());
+  app.use(metricsMiddleware(registry));
 
-  // Initialize dependencies
   const hashtagRepository = new HashtagsRepository();
   const hashtagService = new HashtagService(hashtagRepository);
   const hashtagsController = new HashtagsController(hashtagService);
 
-  // Routes
   app.get('/api/hashtags/top', hashtagsController.getTopHashtags.bind(hashtagsController));
 
-  // Health check endpoint
   app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok' });
   });
+
+  app.get('/metrics', metricsEndpoint(registry));
 
   // Start HTTP server
   const server = app.listen(env.PORT, () => {

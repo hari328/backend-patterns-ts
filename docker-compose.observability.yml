@@ -14,6 +14,22 @@ services:
       - app-network
     restart: unless-stopped
 
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.enable-remote-write-receiver'
+      - '--storage.tsdb.retention.time=7d'
+    networks:
+      - app-network
+    restart: unless-stopped
+
   alloy:
     image: grafana/alloy:latest
     container_name: alloy
@@ -25,6 +41,7 @@ services:
     command: run --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
     depends_on:
       - loki
+      - prometheus
     networks:
       - app-network
     restart: unless-stopped
@@ -39,9 +56,12 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
     volumes:
       - ./observability/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - ./observability/grafana-dashboard-provisioning.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ./observability/dashboards:/etc/grafana/provisioning/dashboards/json
       - grafana-data:/var/lib/grafana
     depends_on:
       - loki
+      - prometheus
     networks:
       - app-network
     restart: unless-stopped
@@ -53,5 +73,6 @@ networks:
 
 volumes:
   loki-data:
+  prometheus-data:
   grafana-data:
 

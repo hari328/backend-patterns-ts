@@ -1,10 +1,11 @@
-// Discover all Docker containers on this host
+// ============================================================================
+// LOGGING PIPELINE — Docker container logs → Loki
+// ============================================================================
+
 discovery.docker "containers" {
   host = "unix:///var/run/docker.sock"
 }
 
-// Convert Docker __meta_* labels into real stream labels.
-// Without this, streams have no labels and Loki rejects them.
 discovery.relabel "containers" {
   targets = discovery.docker.containers.targets
 
@@ -14,16 +15,12 @@ discovery.relabel "containers" {
   }
 }
 
-// Read stdout/stderr logs from discovered containers
 loki.source.docker "default" {
   host       = "unix:///var/run/docker.sock"
   targets    = discovery.relabel.containers.output
   forward_to = [loki.process.json_logs.receiver]
 }
 
-// Parse structured JSON logs and extract labels for Loki indexing.
-// Our Winston logger outputs: {"level":"info","message":"...","service":"posts-service",...}
-// We promote level, service, and component to Loki labels so they're fast to filter on.
 loki.process "json_logs" {
   forward_to = [loki.write.loki.receiver]
 
@@ -44,10 +41,55 @@ loki.process "json_logs" {
   }
 }
 
-// Push processed logs to Loki
 loki.write "loki" {
   endpoint {
     url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// ============================================================================
+// METRICS PIPELINE — App metrics + PostgreSQL + Redis → Prometheus
+// ============================================================================
+
+// PostgreSQL exporter — connects to the postgres container on the Docker network.
+// Exposes: active connections, query duration, rows returned, cache hit ratio, dead tuples.
+prometheus.exporter.postgres "local" {
+  data_source_names = ["postgresql://postgres:postgres@postgres:5432/social_media_db?sslmode=disable"]
+}
+
+prometheus.scrape "postgres" {
+  targets    = prometheus.exporter.postgres.local.targets
+  forward_to = [prometheus.remote_write.default.receiver]
+  scrape_interval = "15s"
+}
+
+// Redis exporter — connects to the redis container on the Docker network.
+// Exposes: memory usage, connected clients, commands/sec, keyspace hits/misses, evictions.
+prometheus.exporter.redis "local" {
+  redis_addr = "redis:6379"
+}
+
+prometheus.scrape "redis" {
+  targets    = prometheus.exporter.redis.local.targets
+  forward_to = [prometheus.remote_write.default.receiver]
+  scrape_interval = "15s"
+}
+
+// Scrape app /metrics endpoints — system metrics (CPU, memory, event loop),
+// HTTP request metrics (duration, count), and any custom business metrics.
+prometheus.scrape "apps" {
+  targets = [
+    {"__address__" = "posts-service:6001", "service" = "posts-service"},
+    {"__address__" = "recommender-service:6000", "service" = "recommender-service"},
+  ]
+  forward_to      = [prometheus.remote_write.default.receiver]
+  scrape_interval = "15s"
+}
+
+// Ship all scraped metrics to Prometheus via remote write.
+prometheus.remote_write "default" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
   }
 }
 

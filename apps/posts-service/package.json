@@ -15,6 +15,7 @@
     "@aws-sdk/client-sqs": "^3.978.0",
     "@repo/database": "*",
     "@repo/logger": "^0.0.0",
+    "@repo/metrics": "*",
     "@repo/types": "*",
     "date-fns": "^3.0.0",
     "dotenv": "^17.2.3",

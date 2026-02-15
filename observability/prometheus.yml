@@ -1,0 +1,7 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# No scrape configs needed — Alloy handles all scraping
+# and remote-writes metrics to Prometheus.
+
