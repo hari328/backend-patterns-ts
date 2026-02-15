@@ -6,7 +6,7 @@
   "links": [],
   "panels": [
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "mappings": [
@@ -24,7 +24,7 @@
       "targets": [{ "expr": "redis_up", "legendFormat": "", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": { "unit": "bytes", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 104857600 }, { "color": "red", "value": 268435456 }] } },
         "overrides": []
@@ -37,7 +37,7 @@
       "targets": [{ "expr": "redis_memory_used_bytes", "legendFormat": "", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 100 }] } },
         "overrides": []
@@ -50,7 +50,7 @@
       "targets": [{ "expr": "redis_connected_clients", "legendFormat": "", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": { "unit": "percentunit", "min": 0, "max": 1, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.8 }, { "color": "green", "value": 0.95 }] } },
         "overrides": []
@@ -63,7 +63,7 @@
       "targets": [{ "expr": "redis_keyspace_hits_total / (redis_keyspace_hits_total + redis_keyspace_misses_total)", "legendFormat": "", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": { "unit": "ops", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } },
         "overrides": []
@@ -76,7 +76,7 @@
       "targets": [{ "expr": "rate(redis_commands_processed_total[5m])", "legendFormat": "", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": { "unit": "s", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } },
         "overrides": []
@@ -89,7 +89,7 @@
       "targets": [{ "expr": "redis_uptime_in_seconds", "legendFormat": "", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "lineWidth": 1, "fillOpacity": 20 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
       "id": 7,
@@ -104,7 +104,7 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "ops", "custom": { "lineWidth": 1, "fillOpacity": 10 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
       "id": 8,
@@ -114,7 +114,7 @@
       "targets": [{ "expr": "rate(redis_commands_processed_total[5m])", "legendFormat": "commands/sec", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "ops", "custom": { "lineWidth": 1, "fillOpacity": 10 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
       "id": 9,
@@ -127,7 +127,7 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "lineWidth": 1, "fillOpacity": 10 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
       "id": 10,
@@ -140,7 +140,7 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "custom": { "lineWidth": 1, "fillOpacity": 10 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
       "id": 11,
@@ -153,7 +153,7 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "ops", "custom": { "lineWidth": 1, "fillOpacity": 10 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
       "id": 12,
@@ -166,7 +166,7 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "custom": { "lineWidth": 1, "fillOpacity": 10 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
       "id": 13,
@@ -179,7 +179,7 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "custom": { "lineWidth": 1, "fillOpacity": 10 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
       "id": 14,
@@ -192,7 +192,24 @@
   "refresh": "15s",
   "schemaVersion": 39,
   "tags": ["redis", "cache"],
-  "templating": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "",

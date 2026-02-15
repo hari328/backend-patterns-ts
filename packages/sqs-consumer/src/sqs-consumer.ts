@@ -8,6 +8,7 @@ import {
   DeleteMessageBatchRequestEntry,
 } from '@aws-sdk/client-sqs';
 import { IdempotencyStore } from './interfaces/idempotency-store';
+import type { MetricsRegistry } from '@repo/metrics';
 
 export interface MessageMetadata {
   retryCount: number;
@@ -47,6 +48,7 @@ export interface SQSConsumerOptions {
   backoffBaseDelay?: number; // Default: 5
   backoffBaseDelayUnit?: TimeUnit; // Default: 'sec'
   retryStrategy?: RetryStrategy; // Default: 'exponential'
+  metricsRegistry?: MetricsRegistry;
 }
 
 export class SQSConsumer {
@@ -59,6 +61,13 @@ export class SQSConsumer {
   private backoffBaseDelayUnit: TimeUnit;
   private retryStrategy: RetryStrategy;
   private isRunning = false;
+  private queueName: string;
+
+  private messagesReceivedCounter?: ReturnType<MetricsRegistry['counter']>;
+  private messagesProcessedCounter?: ReturnType<MetricsRegistry['counter']>;
+  private pollErrorsCounter?: ReturnType<MetricsRegistry['counter']>;
+  private messageProcessingDuration?: ReturnType<MetricsRegistry['histogram']>;
+  private pollDuration?: ReturnType<MetricsRegistry['histogram']>;
 
   constructor(config: SQSConsumerConfig, handler: MessageHandler, options?: SQSConsumerOptions) {
     this.config = config;
@@ -69,6 +78,48 @@ export class SQSConsumer {
     this.backoffBaseDelayUnit = options?.backoffBaseDelayUnit ?? 'sec';
     this.retryStrategy = options?.retryStrategy ?? 'exponential';
     this.sqsClient = new SQSClient(config.sqsClientConfig || {});
+    this.queueName = this.extractQueueName(config.sqsConfig.queueUrl);
+    this.initializeMetrics(options?.metricsRegistry);
+  }
+
+  private extractQueueName(queueUrl: string): string {
+    return queueUrl.split('/').pop() || queueUrl;
+  }
+
+  private initializeMetrics(registry?: MetricsRegistry): void {
+    if (!registry) return;
+
+    this.messagesReceivedCounter = registry.counter({
+      name: 'sqs_messages_received_total',
+      help: 'Total number of messages received from SQS',
+      labelNames: ['queue'],
+    });
+
+    this.messagesProcessedCounter = registry.counter({
+      name: 'sqs_messages_processed_total',
+      help: 'Total number of messages processed',
+      labelNames: ['queue', 'status'],
+    });
+
+    this.pollErrorsCounter = registry.counter({
+      name: 'sqs_poll_errors_total',
+      help: 'Total number of poll loop errors',
+      labelNames: ['queue'],
+    });
+
+    this.messageProcessingDuration = registry.histogram({
+      name: 'sqs_message_processing_duration_seconds',
+      help: 'Duration of individual message processing in seconds',
+      labelNames: ['queue'],
+      buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30],
+    });
+
+    this.pollDuration = registry.histogram({
+      name: 'sqs_poll_duration_seconds',
+      help: 'Duration of each poll cycle in seconds',
+      labelNames: ['queue'],
+      buckets: [0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60],
+    });
   }
 
   /**
@@ -104,18 +155,23 @@ export class SQSConsumer {
    */
   private async poll(): Promise<void> {
     while (this.isRunning) {
+      const pollStart = Date.now();
       try {
         const messages = await this.receiveMessages();
 
         if (messages.length > 0) {
           console.log(`[SQSConsumer] Received ${messages.length} message(s)`);
+          this.messagesReceivedCounter?.inc({ queue: this.queueName }, messages.length);
           await this.processMessages(messages);
         } else {
           // No messages, wait before next poll
           await this.sleep(this.config.pollIntervalMs || 1000);
         }
+
+        this.pollDuration?.observe({ queue: this.queueName }, (Date.now() - pollStart) / 1000);
       } catch (error) {
         console.error('[SQSConsumer] Error in poll loop:', error);
+        this.pollErrorsCounter?.inc({ queue: this.queueName });
         // Wait before retrying
         await this.sleep(5000);
       }
@@ -206,6 +262,8 @@ export class SQSConsumer {
     retryMessages: Message[],
     permanentFailureMessages: Message[]
   ): void {
+    this.messagesProcessedCounter?.inc({ queue: this.queueName, status: result.status });
+
     if (result.status === 'success') {
       successfulMessages.push(message);
     } else if (result.status === 'retry') {
@@ -241,7 +299,9 @@ export class SQSConsumer {
     };
 
     // Process the message - handler returns result
+    const processingStart = Date.now();
     const result = await this.handler.handle(message, metadata);
+    this.messageProcessingDuration?.observe({ queue: this.queueName }, (Date.now() - processingStart) / 1000);
 
     // Retry: Don't mark in idempotency store (allow reprocessing)
     if (result.status === 'retry') {

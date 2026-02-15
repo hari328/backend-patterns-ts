@@ -6,7 +6,7 @@
   "links": [],
   "panels": [
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": { "unit": "reqps", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } },
         "overrides": []
@@ -19,7 +19,7 @@
       "targets": [{ "expr": "sum(rate({__name__=~\".+_http_requests_total\"}[5m]))", "legendFormat": "", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": { "unit": "percentunit", "min": 0, "max": 1, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.01 }, { "color": "red", "value": 0.05 }] } },
         "overrides": []
@@ -32,7 +32,7 @@
       "targets": [{ "expr": "sum(rate({__name__=~\".+_http_requests_total\", status=~\"5..\"}[5m])) / sum(rate({__name__=~\".+_http_requests_total\"}[5m]))", "legendFormat": "", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": { "unit": "s", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "red", "value": 1 }] } },
         "overrides": []
@@ -45,7 +45,7 @@
       "targets": [{ "expr": "histogram_quantile(0.95, sum(rate({__name__=~\".+_http_request_duration_seconds_bucket\"}[5m])) by (le))", "legendFormat": "", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": { "unit": "bytes", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 268435456 }, { "color": "red", "value": 536870912 }] } },
         "overrides": []
@@ -58,7 +58,7 @@
       "targets": [{ "expr": "avg({__name__=~\".+_process_resident_memory_bytes\"})", "legendFormat": "", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 1, "fillOpacity": 20, "stacking": { "mode": "normal" } } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
       "id": 5,
@@ -68,7 +68,7 @@
       "targets": [{ "expr": "sum by (service) (rate({__name__=~\".+_http_requests_total\"}[5m]))", "legendFormat": "{{service}}", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "s", "custom": { "lineWidth": 1, "fillOpacity": 10 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
       "id": 6,
@@ -82,7 +82,7 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "custom": { "lineWidth": 1, "fillOpacity": 20 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
       "id": 7,
@@ -92,7 +92,7 @@
       "targets": [{ "expr": "sum by (service) (rate({__name__=~\".+_http_requests_total\", status=~\"5..\"}[5m])) / sum by (service) (rate({__name__=~\".+_http_requests_total\"}[5m]))", "legendFormat": "{{service}}", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 1, "fillOpacity": 10 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
       "id": 8,
@@ -102,7 +102,7 @@
       "targets": [{ "expr": "sum by (service, route) (rate({__name__=~\".+_http_requests_total\"}[5m]))", "legendFormat": "{{service}} {{route}}", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "lineWidth": 1, "fillOpacity": 20 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
       "id": 9,
@@ -112,7 +112,7 @@
       "targets": [{ "expr": "{__name__=~\".+_process_resident_memory_bytes\"}", "legendFormat": "{{service}}", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "lineWidth": 1, "fillOpacity": 10 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
       "id": 10,
@@ -125,7 +125,7 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "custom": { "lineWidth": 1, "fillOpacity": 10 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
       "id": 11,
@@ -138,7 +138,7 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "unit": "s", "custom": { "lineWidth": 1, "fillOpacity": 10 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
       "id": 12,
@@ -148,7 +148,7 @@
       "targets": [{ "expr": "{__name__=~\".+_nodejs_eventloop_lag_seconds\"}", "legendFormat": "{{service}}", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "custom": { "lineWidth": 1, "fillOpacity": 10 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
       "id": 13,
@@ -158,7 +158,7 @@
       "targets": [{ "expr": "{__name__=~\".+_nodejs_active_handles_total\"}", "legendFormat": "{{service}}", "refId": "A" }]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": { "defaults": { "custom": { "lineWidth": 1, "fillOpacity": 10 } }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
       "id": 14,
@@ -171,7 +171,24 @@
   "refresh": "15s",
   "schemaVersion": 39,
   "tags": ["services", "http", "nodejs"],
-  "templating": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "",

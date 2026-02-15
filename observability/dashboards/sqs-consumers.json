@@ -1,0 +1,172 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "title": "Messages Processed/sec",
+      "type": "stat",
+      "targets": [{ "expr": "sum(rate({__name__=~\".+_sqs_messages_processed_total\"}[5m]))", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.01 }, { "color": "red", "value": 0.05 }] } },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "title": "Failure Rate",
+      "type": "stat",
+      "targets": [{ "expr": "sum(rate({__name__=~\".+_sqs_messages_processed_total\", status=\"fail\"}[5m])) / sum(rate({__name__=~\".+_sqs_messages_processed_total\"}[5m]))", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] } },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "title": "P95 Processing Duration",
+      "type": "stat",
+      "targets": [{ "expr": "histogram_quantile(0.95, sum(rate({__name__=~\".+_sqs_message_processing_duration_seconds_bucket\"}[5m])) by (le))", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "id": 4,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "title": "Poll Errors/sec",
+      "type": "stat",
+      "targets": [{ "expr": "sum(rate({__name__=~\".+_sqs_poll_errors_total\"}[5m]))", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 4 },
+      "id": 5,
+      "title": "Message Throughput",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "lineWidth": 2, "fillOpacity": 10, "spanNulls": true } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } },
+      "title": "Messages Received/sec by Queue",
+      "type": "timeseries",
+      "targets": [{ "expr": "sum by (queue, service) (rate({__name__=~\".+_sqs_messages_received_total\"}[5m]))", "legendFormat": "{{service}} — {{queue}}", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "lineWidth": 2, "fillOpacity": 10, "spanNulls": true } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "id": 7,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } },
+      "title": "Processing Outcomes/sec by Status",
+      "type": "timeseries",
+      "targets": [{ "expr": "sum by (status, queue) (rate({__name__=~\".+_sqs_messages_processed_total\"}[5m]))", "legendFormat": "{{queue}} — {{status}}", "refId": "A" }]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "id": 8,
+      "title": "Latency",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "lineWidth": 2, "fillOpacity": 10, "spanNulls": true } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "id": 9,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } },
+      "title": "Message Processing Duration (p50 / p95 / p99)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le, queue) (rate({__name__=~\".+_sqs_message_processing_duration_seconds_bucket\"}[5m])))", "legendFormat": "p50 — {{queue}}", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum by (le, queue) (rate({__name__=~\".+_sqs_message_processing_duration_seconds_bucket\"}[5m])))", "legendFormat": "p95 — {{queue}}", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum by (le, queue) (rate({__name__=~\".+_sqs_message_processing_duration_seconds_bucket\"}[5m])))", "legendFormat": "p99 — {{queue}}", "refId": "C" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "lineWidth": 2, "fillOpacity": 10, "spanNulls": true } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "id": 10,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } },
+      "title": "Poll Duration (p50 / p95)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le, queue) (rate({__name__=~\".+_sqs_poll_duration_seconds_bucket\"}[5m])))", "legendFormat": "p50 — {{queue}}", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum by (le, queue) (rate({__name__=~\".+_sqs_poll_duration_seconds_bucket\"}[5m])))", "legendFormat": "p95 — {{queue}}", "refId": "B" }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "id": 11,
+      "title": "Errors & Retries",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "lineWidth": 2, "fillOpacity": 10, "spanNulls": true } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "id": 12,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } },
+      "title": "Retry Rate by Queue",
+      "type": "timeseries",
+      "targets": [{ "expr": "sum by (queue) (rate({__name__=~\".+_sqs_messages_processed_total\", status=\"retry\"}[5m]))", "legendFormat": "{{queue}}", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "lineWidth": 2, "fillOpacity": 10, "spanNulls": true } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "id": 13,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } },
+      "title": "Poll Errors by Queue",
+      "type": "timeseries",
+      "targets": [{ "expr": "sum by (queue) (rate({__name__=~\".+_sqs_poll_errors_total\"}[5m]))", "legendFormat": "{{queue}}", "refId": "A" }]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["sqs", "consumers"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "SQS Consumers",
+  "uid": "sqs-consumers-overview"
+}

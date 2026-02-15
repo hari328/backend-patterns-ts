@@ -51,7 +51,8 @@ async function main() {
       pollIntervalMs: 1000,
       processInParallel: postsStreamQueueConfig.processingMode === 'parallel',
     },
-    new PostCreatedHandler()
+    new PostCreatedHandler(),
+    { metricsRegistry: registry }
   );
 
   // Start consuming messages

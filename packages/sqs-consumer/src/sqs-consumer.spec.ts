@@ -3,6 +3,7 @@ import { SQSClient } from '@aws-sdk/client-sqs';
 import { SQSConsumer, type MessageHandler } from './sqs-consumer';
 import { InMemoryIdempotencyStore } from './stores/in-memory-idempotency-store';
 import { InMemoryBackoffStore } from './stores/in-memory-backoff-store';
+import type { MetricsRegistry } from '@repo/metrics';
 
 describe('SQSConsumer - Basic message handling functionality', () => {
   let mockSend: any;
@@ -684,5 +685,168 @@ describe('SQSConsumer - Visibility Timeout on Retry', () => {
       call[0].constructor.name === 'DeleteMessageBatchCommand'
     );
     expect(deleteCall).toBeUndefined();
+  });
+});
+
+describe('SQSConsumer - Metrics', () => {
+  let mockSend: any;
+  let mockHandler: MessageHandler;
+  let mockRegistry: MetricsRegistry;
+  let mockCounter: { inc: ReturnType<typeof vi.fn> };
+  let mockHistogram: { observe: ReturnType<typeof vi.fn> };
+  let mockGauge: { inc: ReturnType<typeof vi.fn>; dec: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSend = vi.fn();
+    vi.spyOn(SQSClient.prototype, 'send').mockImplementation(mockSend);
+    mockHandler = { handle: vi.fn() };
+
+    mockCounter = { inc: vi.fn() };
+    mockHistogram = { observe: vi.fn() };
+    mockGauge = { inc: vi.fn(), dec: vi.fn() };
+
+    mockRegistry = {
+      counter: vi.fn().mockReturnValue(mockCounter),
+      histogram: vi.fn().mockReturnValue(mockHistogram),
+      gauge: vi.fn().mockReturnValue(mockGauge),
+      getPrometheusRegistry: vi.fn(),
+      getMetrics: vi.fn(),
+      getContentType: vi.fn(),
+    } as unknown as MetricsRegistry;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('should increment sqs_messages_received_total when messages are received', async () => {
+    const messages = [
+      { MessageId: 'msg-1', ReceiptHandle: 'r-1', Body: '{}' },
+      { MessageId: 'msg-2', ReceiptHandle: 'r-2', Body: '{}' },
+    ];
+
+    mockSend.mockResolvedValueOnce({ Messages: messages });
+    mockSend.mockResolvedValueOnce({ Successful: [{ Id: '0' }, { Id: '1' }], Failed: [] });
+    mockSend.mockResolvedValue({ Messages: [] });
+    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'success' });
+
+    const consumer = new SQSConsumer(
+      {
+        sqsConfig: {
+          queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue',
+          maxNumberOfMessages: 10,
+          waitTimeSeconds: 20,
+          visibilityTimeout: 30,
+        },
+      },
+      mockHandler,
+      { metricsRegistry: mockRegistry }
+    );
+
+    await consumer.start();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await consumer.stop();
+
+    expect(mockRegistry.counter).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'sqs_messages_received_total' })
+    );
+    expect(mockCounter.inc).toHaveBeenCalledWith({ queue: 'test-queue' }, 2);
+  });
+
+  it('should increment sqs_messages_processed_total with correct status labels', async () => {
+    const messages = [
+      { MessageId: 'msg-s', ReceiptHandle: 'r-s', Body: '{}' },
+      { MessageId: 'msg-r', ReceiptHandle: 'r-r', Body: '{}' },
+      { MessageId: 'msg-f', ReceiptHandle: 'r-f', Body: '{}' },
+    ];
+
+    mockSend.mockResolvedValueOnce({ Messages: messages });
+    mockSend.mockResolvedValue({ Messages: [] });
+
+    const processedCounterInc = vi.fn();
+    const receivedCounterInc = vi.fn();
+    const pollErrorsCounterInc = vi.fn();
+
+    mockRegistry.counter = vi.fn().mockImplementation((config: { name: string }) => {
+      if (config.name === 'sqs_messages_processed_total') return { inc: processedCounterInc };
+      if (config.name === 'sqs_messages_received_total') return { inc: receivedCounterInc };
+      if (config.name === 'sqs_poll_errors_total') return { inc: pollErrorsCounterInc };
+      return { inc: vi.fn() };
+    });
+
+    let callIndex = 0;
+    mockHandler.handle = vi.fn().mockImplementation(() => {
+      callIndex++;
+      if (callIndex === 1) return Promise.resolve({ status: 'success' });
+      if (callIndex === 2) return Promise.resolve({ status: 'retry' });
+      return Promise.resolve({ status: 'fail' });
+    });
+
+    const consumer = new SQSConsumer(
+      {
+        sqsConfig: {
+          queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789/my-queue',
+          maxNumberOfMessages: 10,
+          waitTimeSeconds: 20,
+          visibilityTimeout: 30,
+        },
+      },
+      mockHandler,
+      { metricsRegistry: mockRegistry }
+    );
+
+    await consumer.start();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await consumer.stop();
+
+    expect(processedCounterInc).toHaveBeenCalledWith({ queue: 'my-queue', status: 'success' });
+    expect(processedCounterInc).toHaveBeenCalledWith({ queue: 'my-queue', status: 'retry' });
+    expect(processedCounterInc).toHaveBeenCalledWith({ queue: 'my-queue', status: 'fail' });
+  });
+
+  it('should observe sqs_message_processing_duration_seconds for each message', async () => {
+    const messages = [
+      { MessageId: 'msg-1', ReceiptHandle: 'r-1', Body: '{}' },
+      { MessageId: 'msg-2', ReceiptHandle: 'r-2', Body: '{}' },
+    ];
+
+    mockSend.mockResolvedValueOnce({ Messages: messages });
+    mockSend.mockResolvedValueOnce({ Successful: [{ Id: '0' }, { Id: '1' }], Failed: [] });
+    mockSend.mockResolvedValue({ Messages: [] });
+
+    const durationObserve = vi.fn();
+    const pollDurationObserve = vi.fn();
+
+    mockRegistry.histogram = vi.fn().mockImplementation((config: { name: string }) => {
+      if (config.name === 'sqs_message_processing_duration_seconds') return { observe: durationObserve };
+      if (config.name === 'sqs_poll_duration_seconds') return { observe: pollDurationObserve };
+      return { observe: vi.fn() };
+    });
+
+    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'success' });
+
+    const consumer = new SQSConsumer(
+      {
+        sqsConfig: {
+          queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789/duration-queue',
+          maxNumberOfMessages: 10,
+          waitTimeSeconds: 20,
+          visibilityTimeout: 30,
+        },
+      },
+      mockHandler,
+      { metricsRegistry: mockRegistry }
+    );
+
+    await consumer.start();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await consumer.stop();
+
+    expect(durationObserve).toHaveBeenCalledTimes(2);
+    expect(durationObserve).toHaveBeenCalledWith(
+      { queue: 'duration-queue' },
+      expect.any(Number)
+    );
   });
 });
