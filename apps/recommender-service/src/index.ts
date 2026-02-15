@@ -1,3 +1,4 @@
+import '@repo/tracing';
 import express from 'express';
 import { SQSConsumer } from '@repo/sqs-consumer';
 import { metricsMiddleware, metricsEndpoint } from '@repo/metrics';

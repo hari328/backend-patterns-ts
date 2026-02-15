@@ -93,6 +93,9 @@ services:
       - AWS_ENDPOINT=http://localstack:4566
       # SQS Queue URL
       - SQS_POSTS_STREAM_QUEUE_URL=http://localstack:4566/000000000000/post-stream
+      # OpenTelemetry
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318
+      - OTEL_SERVICE_NAME=posts-service
     depends_on:
       db-init:
         condition: service_completed_successfully
@@ -129,6 +132,9 @@ services:
       - AWS_ENDPOINT=http://localstack:4566
       # SQS Posts Stream Queue URL
       - SQS_POSTS_STREAM_QUEUE_URL=http://localstack:4566/000000000000/post-stream
+      # OpenTelemetry
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318
+      - OTEL_SERVICE_NAME=recommender-service
     depends_on:
       - localstack
       - postgres

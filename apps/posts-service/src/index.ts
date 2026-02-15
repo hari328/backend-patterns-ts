@@ -1,3 +1,4 @@
+import '@repo/tracing';
 import express from 'express';
 import postsRoutes from './routes/posts.routes';
 import { metricsMiddleware, metricsEndpoint } from '@repo/metrics';

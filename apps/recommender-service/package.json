@@ -16,6 +16,7 @@
     "@repo/logger": "^0.0.0",
     "@repo/metrics": "*",
     "@repo/sqs-consumer": "*",
+    "@repo/tracing": "^0.0.0",
     "@repo/types": "*",
     "dotenv": "^16.4.7",
     "express": "^4.18.2",

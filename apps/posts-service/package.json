@@ -16,6 +16,7 @@
     "@repo/database": "*",
     "@repo/logger": "^0.0.0",
     "@repo/metrics": "*",
+    "@repo/tracing": "^0.0.0",
     "@repo/types": "*",
     "date-fns": "^3.0.0",
     "dotenv": "^17.2.3",
