@@ -29,7 +29,7 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=social_media_db
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - backend-patterns-ts-postgres-data:/var/lib/postgresql/data
     networks:
       - app-network
     restart: unless-stopped
@@ -144,6 +144,6 @@ networks:
     driver: bridge
 
 volumes:
-  postgres-data:
+  backend-patterns-ts-postgres-data:
   redis-data:
 

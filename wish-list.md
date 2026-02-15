@@ -1,15 +1,35 @@
-# things I want to add to this project are
+# Goal
 
-1. I want to add sasta kafka
+as a senior engineer in backend technologies I want to create a wish list of things I want to do in this project. This will act as a guide for me to learn new things and also to keep the project interesting.
 
-2. I want to add a es type database on postgres showing how we can do
-    1. inverted index
-    2. phontic search
-    3. edit distance
-    4. vector search
 
-3. I want add something like slack also to this.
+## systems to build
 
-4. I want to add something like uber also to this.
+1. slack communication
+2. payments system
+    * to show how temporal works
+    * how durable transactions works
+    * how complex transaction can get
+3. Driver fleet managmetn
+    * an UI showing where the drivers are 
+    * where the surge is for Uber admins
 
-5. fix the repo tests to run on pg-mem db or some other in memory db, we are facing issue bcoz pg-mem don't have typeParser
+
+## Tech to show
+1. Google SSO 
+2. OTP based auth
+3. how to deal with sqs
+4. how to couple sns and sqs as kafka subsitute
+5. how to deploy servies like tansu.io
+6. how edge servers work ?
+7. how logging and metrics work
+8. temporal working
+7. imperssion counting using hyperloglog
+8. how to implement bloom filters
+
+
+## next topics
+1. react js revision
+2. understand how to write css
+
+
