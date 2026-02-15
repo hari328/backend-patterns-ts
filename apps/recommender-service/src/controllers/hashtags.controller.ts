@@ -1,5 +1,8 @@
 import { Request, Response } from 'express';
 import { HashtagService } from '../services/hashtag.service';
+import { logger } from '../logger';
+
+const controllerLogger = logger.forComponent('HashtagsController');
 
 export class HashtagsController {
   private service: HashtagService;
@@ -27,7 +30,7 @@ export class HashtagsController {
         count: topHashtags.length,
       });
     } catch (error) {
-      console.error('[HashtagsController] Error getting top hashtags:', error);
+      controllerLogger.error('Error getting top hashtags', error);
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'An unexpected error occurred',

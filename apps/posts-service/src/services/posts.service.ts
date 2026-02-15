@@ -2,6 +2,9 @@ import { generateSnowflakeId } from '@repo/database';
 import { PostsRepository } from '../repositories/posts.repository';
 import { PostResponse } from '../types/posts.types';
 import { PostsSQSPublisher } from './sqs-publisher';
+import { logger } from '../logger';
+
+const serviceLogger = logger.forComponent('PostsService');
 
 export class PostsService {
   private repository: PostsRepository;
@@ -40,8 +43,7 @@ export class PostsService {
     try {
       await this.sqsPublisher.publishPostCreated(postId, userId);
     } catch (error) {
-      console.error('Failed to publish POST_CREATED event to SQS:', error);
-      // Continue execution - post creation succeeded even if event publish failed
+      serviceLogger.error('Failed to publish POST_CREATED event to SQS', error, { postId, userId });
     }
 
     return post;

@@ -1,4 +1,7 @@
 import { HashtagsRepository, HashtagData } from '../repositories/hashtags.repository';
+import { logger } from '../logger';
+
+const serviceLogger = logger.forComponent('HashtagService');
 
 export class HashtagService {
   constructor(private hashtagRepository: HashtagsRepository) {}
@@ -21,7 +24,7 @@ export class HashtagService {
     const hashtagNames = this.extractHashtags(post.caption);
 
     if (hashtagNames.length === 0) {
-      console.log(`[HashtagService] No hashtags found in post ${postId}`);
+      serviceLogger.info('No hashtags found in post', { postId });
       return;
     }
 
@@ -36,7 +39,7 @@ export class HashtagService {
       .map((name) => {
         const hashtagId = hashtagMap.get(name);
         if (!hashtagId) {
-          console.error(`[HashtagService] Failed to get hashtag ID for: ${name}`);
+          serviceLogger.warn('Failed to get hashtag ID', { hashtagName: name });
           return null;
         }
         return { postId, hashtagId };
@@ -45,7 +48,7 @@ export class HashtagService {
 
     await this.hashtagRepository.batchCreatePostHashtags(postHashtagPairs);
 
-    console.log(`[HashtagService] Processed ${hashtagNames.length} hashtags for post ${postId}`);
+    serviceLogger.info('Processed hashtags for post', { postId, hashtagCount: hashtagNames.length });
   }
 
   async batchProcessHashtags(hashtagDataMap: Map<string, HashtagData[]>): Promise<void> {
@@ -69,7 +72,7 @@ export class HashtagService {
       .map((mapping) => {
         const hashtagId = hashtagMap.get(mapping.hashtagName);
         if (!hashtagId) {
-          console.error(`[HashtagService] Failed to get hashtag ID for: ${mapping.hashtagName}`);
+          serviceLogger.warn('Failed to get hashtag ID', { hashtagName: mapping.hashtagName });
           return null;
         }
         return { postId: mapping.postId, hashtagId };
@@ -78,7 +81,7 @@ export class HashtagService {
 
     await this.hashtagRepository.batchCreatePostHashtags(postHashtagPairs);
 
-    console.log(`[HashtagService] Batch processed ${hashtagCounts.size} unique hashtags from ${postHashtagMapping.length} post-hashtag relationships`);
+    serviceLogger.info('Batch processed hashtags', { uniqueHashtagCount: hashtagCounts.size, postHashtagRelationships: postHashtagMapping.length });
   }
 
   async getTopHashtags(limit: number = 5): Promise<Array<{ id: string; name: string; usageCount: number }>> {

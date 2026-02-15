@@ -121,20 +121,11 @@ describe('PostsService', () => {
         new Error('SQS service unavailable')
       );
 
-      // Spy on console.error to verify error logging
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
       const result = await service.createPost(userId, caption);
 
       expect(mockRepository.createPost).toHaveBeenCalled();
       expect(mockSQSPublisher.publishPostCreated).toHaveBeenCalled();
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        'Failed to publish POST_CREATED event to SQS:',
-        expect.any(Error)
-      );
       expect(result).toEqual(mockPost);
-
-      consoleErrorSpy.mockRestore();
     });
   });
 

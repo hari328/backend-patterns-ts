@@ -13,6 +13,7 @@
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.974.0",
     "@repo/database": "^0.0.0",
+    "@repo/logger": "^0.0.0",
     "@repo/sqs-consumer": "*",
     "@repo/types": "*",
     "dotenv": "^16.4.7",

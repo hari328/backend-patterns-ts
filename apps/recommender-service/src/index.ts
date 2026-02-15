@@ -5,11 +5,10 @@ import { PostCreatedHandler } from './handlers/post-created.handler';
 import { HashtagsController } from './controllers/hashtags.controller';
 import { HashtagService } from './services/hashtag.service';
 import { HashtagsRepository } from './repositories/hashtags.repository';
+import { logger } from './logger';
 
 async function main() {
-  console.log('[Recommender Service] Starting...');
-  console.log(`[Recommender Service] Environment: ${env.NODE_ENV}`);
-  console.log(`[Recommender Service] Port: ${env.PORT}`);
+  logger.info('Starting', { environment: env.NODE_ENV, port: env.PORT });
 
   // Initialize Express app
   const app = express();
@@ -30,7 +29,7 @@ async function main() {
 
   // Start HTTP server
   const server = app.listen(env.PORT, () => {
-    console.log(`[Recommender Service] HTTP server listening on port ${env.PORT}`);
+    logger.info('HTTP server listening', { port: env.PORT });
   });
 
   // Create SQS Consumer for posts-stream queue
@@ -59,11 +58,11 @@ async function main() {
 
   // Graceful shutdown
   const shutdown = async () => {
-    console.log('[Recommender Service] Shutting down gracefully...');
+    logger.info('Shutting down gracefully');
 
     // Stop HTTP server
     server.close(() => {
-      console.log('[Recommender Service] HTTP server closed');
+      logger.info('HTTP server closed');
     });
 
     // Stop SQS consumer
@@ -75,11 +74,12 @@ async function main() {
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 
-  console.log('[Recommender Service] Ready to process messages!');
+  logger.info('Ready to process messages');
 }
 
 main().catch((error) => {
   console.error('[Recommender Service] Fatal error:', error);
   process.exit(1);
 });
+
 

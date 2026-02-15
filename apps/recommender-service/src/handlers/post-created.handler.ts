@@ -2,6 +2,9 @@ import type { Message, MessageHandler, MessageMetadata, MessageResult } from '@r
 import { PostCreatedEvent } from '@repo/types';
 import { HashtagService } from '../services/hashtag.service';
 import { HashtagsRepository } from '../repositories/hashtags.repository';
+import { logger } from '../logger';
+
+const handlerLogger = logger.forComponent('PostCreatedHandler');
 
 export class PostCreatedHandler implements MessageHandler {
   private hashtagService: HashtagService;
@@ -25,21 +28,22 @@ export class PostCreatedHandler implements MessageHandler {
     }
 
     try {
-      console.log(`[PostCreatedHandler] Processing POST_CREATED event`);
-      console.log(`  Post ID: ${event.postId}`);
-      console.log(`  User ID: ${event.userId}`);
-      console.log(`  Timestamp: ${event.timestamp}`);
-      console.log(`  Retry Count: ${metadata.retryCount}`);
-      console.log(`  Is Last Attempt: ${metadata.isLastAttempt}`);
+      handlerLogger.info('Processing POST_CREATED event', {
+        postId: event.postId,
+        userId: event.userId,
+        eventTimestamp: event.timestamp,
+        retryCount: metadata.retryCount,
+        isLastAttempt: metadata.isLastAttempt,
+      });
 
       // Process hashtags immediately and persist to database
       await this.hashtagService.processPostHashtags(event.postId);
 
-      console.log(`[PostCreatedHandler] ✅ Successfully processed hashtags for post ${event.postId}`);
+      handlerLogger.info('Successfully processed hashtags', { postId: event.postId });
 
       return { status: 'success' };
     } catch (error) {
-      console.error(`[PostCreatedHandler] Failed to process hashtags for post ${event.postId}:`, error);
+      handlerLogger.error('Failed to process hashtags', error, { postId: event.postId });
 
       if (error instanceof Error && error.message.includes('Post not found')) {
         return { status: 'fail', reason: error.message };

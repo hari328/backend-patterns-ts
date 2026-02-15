@@ -1,5 +1,8 @@
 import { Request, Response } from 'express';
 import { PostsService } from '../services/posts.service';
+import { logger } from '../logger';
+
+const controllerLogger = logger.forComponent('PostsController');
 
 export class PostsController {
   private service: PostsService;
@@ -41,6 +44,7 @@ export class PostsController {
         return;
       }
 
+      controllerLogger.error('Error creating post', error, { userId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'An unexpected error occurred',
@@ -81,6 +85,7 @@ export class PostsController {
         return;
       }
 
+      controllerLogger.error('Error getting post', error, { postId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'An unexpected error occurred',
@@ -123,6 +128,7 @@ export class PostsController {
         return;
       }
 
+      controllerLogger.error('Error getting posts by user', error, { userId });
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'An unexpected error occurred',
@@ -142,6 +148,7 @@ export class PostsController {
         }))
       );
     } catch (error) {
+      controllerLogger.error('Error getting users', error);
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'An unexpected error occurred',
