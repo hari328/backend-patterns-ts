@@ -166,6 +166,31 @@
       "title": "Active Requests",
       "type": "timeseries",
       "targets": [{ "expr": "{__name__=~\".+_nodejs_active_requests_total\"}", "legendFormat": "{{service}}", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 44 },
+      "id": 15,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "title": "Posts Created/sec",
+      "type": "stat",
+      "targets": [{ "expr": "sum(rate({__name__=~\".+_posts_created_total\"}[5m]))", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 1, "fillOpacity": 20, "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 18, "x": 6, "y": 44 },
+      "id": 16,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "lastNotNull"] }, "tooltip": { "mode": "multi" } },
+      "title": "Posts by Hashtag Presence",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "sum by (has_hashtags) (rate({__name__=~\".+_posts_created_total\"}[5m]))", "legendFormat": "has_hashtags={{has_hashtags}}", "refId": "A" }
+      ]
     }
   ],
   "refresh": "15s",
@@ -183,7 +208,7 @@
         "options": [],
         "query": "prometheus",
         "refresh": 1,
-        "regex": "",
+        "regex": "Prometheus",
         "skipUrlSync": false,
         "type": "datasource"
       }

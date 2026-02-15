@@ -3,6 +3,7 @@ import { PostsService } from './posts.service';
 import { PostsRepository } from '../repositories/posts.repository';
 import { PostsSQSPublisher } from './sqs-publisher';
 import { User, PostResponse } from '../types/posts.types';
+import type { MetricsRegistry } from '@repo/metrics';
 
 describe('PostsService', () => {
   let service: PostsService;
@@ -242,6 +243,80 @@ describe('PostsService', () => {
       expect(mockRepository.findUserById).toHaveBeenCalledWith(userId);
       expect(mockRepository.findPostsByUserId).toHaveBeenCalledWith(userId);
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('createPost - Metrics', () => {
+    let mockCounter: { inc: ReturnType<typeof vi.fn> };
+    let mockMetricsRegistry: { counter: ReturnType<typeof vi.fn> };
+
+    beforeEach(() => {
+      mockCounter = { inc: vi.fn() };
+      mockMetricsRegistry = {
+        counter: vi.fn().mockReturnValue(mockCounter),
+      };
+
+      service = new PostsService(
+        mockRepository as unknown as PostsRepository,
+        mockSQSPublisher as unknown as PostsSQSPublisher,
+        mockMetricsRegistry as unknown as MetricsRegistry
+      );
+    });
+
+    it('should increment posts_created_total with has_hashtags="true" when caption contains hashtags', async () => {
+      const userId = '274137326815285248';
+      const caption = 'Hello #world #testing';
+
+      mockRepository.findUserById.mockResolvedValue({
+        id: userId,
+        username: 'johndoe',
+        email: 'john@example.com',
+        fullName: 'John Doe',
+        isVerified: true,
+      });
+      mockRepository.createPost.mockResolvedValue({
+        id: '274137326815285249',
+        userId,
+        caption,
+        likesCount: 0,
+        commentsCount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        deletedAt: null,
+      });
+      mockSQSPublisher.publishPostCreated.mockResolvedValue('mock-message-id');
+
+      await service.createPost(userId, caption);
+
+      expect(mockCounter.inc).toHaveBeenCalledWith({ has_hashtags: 'true' });
+    });
+
+    it('should increment posts_created_total with has_hashtags="false" when caption has no hashtags', async () => {
+      const userId = '274137326815285248';
+      const caption = 'Hello world no hashtags here';
+
+      mockRepository.findUserById.mockResolvedValue({
+        id: userId,
+        username: 'johndoe',
+        email: 'john@example.com',
+        fullName: 'John Doe',
+        isVerified: true,
+      });
+      mockRepository.createPost.mockResolvedValue({
+        id: '274137326815285249',
+        userId,
+        caption,
+        likesCount: 0,
+        commentsCount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        deletedAt: null,
+      });
+      mockSQSPublisher.publishPostCreated.mockResolvedValue('mock-message-id');
+
+      await service.createPost(userId, caption);
+
+      expect(mockCounter.inc).toHaveBeenCalledWith({ has_hashtags: 'false' });
     });
   });
 });

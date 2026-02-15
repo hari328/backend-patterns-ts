@@ -1,4 +1,5 @@
 import { generateSnowflakeId } from '@repo/database';
+import type { MetricsRegistry } from '@repo/metrics';
 import { PostsRepository } from '../repositories/posts.repository';
 import { PostResponse } from '../types/posts.types';
 import { PostsSQSPublisher } from './sqs-publisher';
@@ -6,13 +7,24 @@ import { logger } from '../logger';
 
 const serviceLogger = logger.forComponent('PostsService');
 
+const HASHTAG_REGEX = /#\w+/;
+
 export class PostsService {
   private repository: PostsRepository;
   private sqsPublisher: PostsSQSPublisher;
+  private postsCreatedCounter: ReturnType<MetricsRegistry['counter']> | undefined;
 
-  constructor(repository: PostsRepository, sqsPublisher: PostsSQSPublisher) {
+  constructor(repository: PostsRepository, sqsPublisher: PostsSQSPublisher, metricsRegistry?: MetricsRegistry) {
     this.repository = repository;
     this.sqsPublisher = sqsPublisher;
+
+    if (metricsRegistry) {
+      this.postsCreatedCounter = metricsRegistry.counter({
+        name: 'posts_created_total',
+        help: 'Total number of posts created',
+        labelNames: ['has_hashtags'],
+      });
+    }
   }
 
   async createPost(userId: string, caption: string): Promise<PostResponse> {
@@ -45,6 +57,9 @@ export class PostsService {
     } catch (error) {
       serviceLogger.error('Failed to publish POST_CREATED event to SQS', error, { postId, userId });
     }
+
+    const hasHashtags = HASHTAG_REGEX.test(caption);
+    this.postsCreatedCounter?.inc({ has_hashtags: String(hasHashtags) });
 
     return post;
   }
