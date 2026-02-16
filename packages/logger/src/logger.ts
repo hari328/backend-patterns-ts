@@ -1,4 +1,5 @@
 import winston from 'winston';
+import { trace, context, isSpanContextValid } from '@opentelemetry/api';
 import { Logger, LoggerConfig, LoggerOptions } from './interfaces';
 
 function extractError(error: unknown): Record<string, unknown> {
@@ -10,6 +11,23 @@ function extractError(error: unknown): Record<string, unknown> {
     };
   }
   return { message: String(error) };
+}
+
+function getTraceContext(): Record<string, string> {
+  const span = trace.getSpan(context.active());
+  if (!span) {
+    return {};
+  }
+
+  const spanContext = span.spanContext();
+  if (!isSpanContextValid(spanContext)) {
+    return {};
+  }
+
+  return {
+    traceId: spanContext.traceId,
+    spanId: spanContext.spanId,
+  };
 }
 
 function buildFormat(): winston.Logform.Format {
@@ -29,20 +47,21 @@ function createLoggerInstance(
 
   return {
     info(message: string, meta?: Record<string, unknown>): void {
-      winstonLogger.info(formatMessage(message), { ...staticMeta, ...meta });
+      winstonLogger.info(formatMessage(message), { ...staticMeta, ...getTraceContext(), ...meta });
     },
 
     warn(message: string, meta?: Record<string, unknown>): void {
-      winstonLogger.warn(formatMessage(message), { ...staticMeta, ...meta });
+      winstonLogger.warn(formatMessage(message), { ...staticMeta, ...getTraceContext(), ...meta });
     },
 
     debug(message: string, meta?: Record<string, unknown>): void {
-      winstonLogger.debug(formatMessage(message), { ...staticMeta, ...meta });
+      winstonLogger.debug(formatMessage(message), { ...staticMeta, ...getTraceContext(), ...meta });
     },
 
     error(message: string, error?: unknown, meta?: Record<string, unknown>): void {
       winstonLogger.error(formatMessage(message), {
         ...staticMeta,
+        ...getTraceContext(),
         ...meta,
         error: error !== undefined ? extractError(error) : undefined,
       });

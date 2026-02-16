@@ -7,6 +7,7 @@ import {
   Message,
   DeleteMessageBatchRequestEntry,
 } from '@aws-sdk/client-sqs';
+import { trace, SpanKind, SpanStatusCode } from '@opentelemetry/api';
 import { IdempotencyStore } from './interfaces/idempotency-store';
 import type { MetricsRegistry } from '@repo/metrics';
 
@@ -298,29 +299,48 @@ export class SQSConsumer {
       isLastAttempt: maxReceiveCount !== undefined ? retryCount >= maxReceiveCount : false,
     };
 
-    // Process the message - handler returns result
-    const processingStart = Date.now();
-    const result = await this.handler.handle(message, metadata);
-    this.messageProcessingDuration?.observe({ queue: this.queueName }, (Date.now() - processingStart) / 1000);
+    const tracer = trace.getTracer('sqs-consumer');
 
-    // Retry: Don't mark in idempotency store (allow reprocessing)
-    if (result.status === 'retry') {
-      return result;
-    }
+    return tracer.startActiveSpan(
+      `${this.queueName} process`,
+      { kind: SpanKind.CONSUMER },
+      async (span) => {
+        span.setAttribute('messaging.system', 'aws_sqs');
+        span.setAttribute('messaging.destination.name', this.queueName);
+        span.setAttribute('messaging.message.id', messageId);
+        span.setAttribute('messaging.operation', 'process');
+        span.setAttribute('messaging.message.retry_count', retryCount);
 
-    // Success or Fail: Mark in idempotency store
-    if (this.idempotencyStore) {
-      await this.idempotencyStore.markProcessed(messageId, this.idempotencyTtlSeconds);
-    }
+        const processingStart = Date.now();
+        const result = await this.handler.handle(message, metadata);
+        this.messageProcessingDuration?.observe({ queue: this.queueName }, (Date.now() - processingStart) / 1000);
 
-    // Log based on status
-    if (result.status === 'success') {
-      console.log(`[SQSConsumer] ✅ Successfully processed message ${messageId}`);
-    } else {
-      console.error(`[SQSConsumer] 💀 Permanent failure for message ${messageId}${result.reason ? `: ${result.reason}` : ''}`);
-    }
+        if (result.status === 'success') {
+          span.setStatus({ code: SpanStatusCode.OK });
+          console.log(`[SQSConsumer] ✅ Successfully processed message ${messageId}`);
+        } else if (result.status === 'retry') {
+          span.setStatus({ code: SpanStatusCode.ERROR, message: result.reason });
+        } else if (result.status === 'fail') {
+          span.setStatus({ code: SpanStatusCode.ERROR, message: result.reason });
+          span.recordException(new Error(result.reason || 'Permanent failure'));
+          console.error(`[SQSConsumer] 💀 Permanent failure for message ${messageId}${result.reason ? `: ${result.reason}` : ''}`);
+        }
 
-    return result;
+        span.end();
+
+        // Retry: Don't mark in idempotency store (allow reprocessing)
+        if (result.status === 'retry') {
+          return result;
+        }
+
+        // Success or Fail: Mark in idempotency store
+        if (this.idempotencyStore) {
+          await this.idempotencyStore.markProcessed(messageId, this.idempotencyTtlSeconds);
+        }
+
+        return result;
+      }
+    );
   }
 
   /**

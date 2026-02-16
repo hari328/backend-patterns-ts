@@ -850,3 +850,152 @@ describe('SQSConsumer - Metrics', () => {
     );
   });
 });
+
+describe('SQSConsumer - Tracing', () => {
+  let mockSend: any;
+  let mockHandler: MessageHandler;
+  let consumer: SQSConsumer;
+
+  let mockSpan: {
+    setAttribute: ReturnType<typeof vi.fn>;
+    setStatus: ReturnType<typeof vi.fn>;
+    recordException: ReturnType<typeof vi.fn>;
+    end: ReturnType<typeof vi.fn>;
+  };
+  let mockTracer: { startActiveSpan: ReturnType<typeof vi.fn> };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockSend = vi.fn();
+    vi.spyOn(SQSClient.prototype, 'send').mockImplementation(mockSend);
+    mockHandler = { handle: vi.fn() };
+
+    mockSpan = {
+      setAttribute: vi.fn(),
+      setStatus: vi.fn(),
+      recordException: vi.fn(),
+      end: vi.fn(),
+    };
+
+    mockTracer = {
+      startActiveSpan: vi.fn().mockImplementation((_name: string, _opts: any, callback: any) => {
+        return callback(mockSpan);
+      }),
+    };
+
+    const otelApi = await import('@opentelemetry/api');
+    vi.spyOn(otelApi.trace, 'getTracer').mockReturnValue(mockTracer as any);
+
+    consumer = new SQSConsumer(
+      {
+        sqsConfig: {
+          queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789/post-stream',
+          maxNumberOfMessages: 10,
+          waitTimeSeconds: 20,
+          visibilityTimeout: 30,
+        },
+      },
+      mockHandler
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('should create a CONSUMER span with messaging attributes', async () => {
+    const mockMessage = {
+      MessageId: 'msg-trace-1',
+      ReceiptHandle: 'receipt-trace-1',
+      Body: JSON.stringify({ postId: '1' }),
+    };
+
+    mockSend.mockResolvedValueOnce({ Messages: [mockMessage] });
+    mockSend.mockResolvedValueOnce({ Successful: [{ Id: '0' }], Failed: [] });
+    mockSend.mockResolvedValue({ Messages: [] });
+    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'success' });
+
+    await consumer.start();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await consumer.stop();
+
+    expect(mockTracer.startActiveSpan).toHaveBeenCalledWith(
+      'post-stream process',
+      expect.objectContaining({ kind: 4 }), // SpanKind.CONSUMER = 4
+      expect.any(Function)
+    );
+
+    expect(mockSpan.setAttribute).toHaveBeenCalledWith('messaging.system', 'aws_sqs');
+    expect(mockSpan.setAttribute).toHaveBeenCalledWith('messaging.destination.name', 'post-stream');
+    expect(mockSpan.setAttribute).toHaveBeenCalledWith('messaging.message.id', 'msg-trace-1');
+    expect(mockSpan.setAttribute).toHaveBeenCalledWith('messaging.operation', 'process');
+    expect(mockSpan.end).toHaveBeenCalled();
+  });
+
+  it('should set span status OK on success', async () => {
+    const mockMessage = {
+      MessageId: 'msg-ok-1',
+      ReceiptHandle: 'receipt-ok-1',
+      Body: JSON.stringify({ data: 'test' }),
+    };
+
+    mockSend.mockResolvedValueOnce({ Messages: [mockMessage] });
+    mockSend.mockResolvedValueOnce({ Successful: [{ Id: '0' }], Failed: [] });
+    mockSend.mockResolvedValue({ Messages: [] });
+    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'success' });
+
+    await consumer.start();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await consumer.stop();
+
+    expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: 1 }); // SpanStatusCode.OK = 1
+    expect(mockSpan.recordException).not.toHaveBeenCalled();
+  });
+
+  it('should set span status ERROR and record exception on fail', async () => {
+    const mockMessage = {
+      MessageId: 'msg-fail-1',
+      ReceiptHandle: 'receipt-fail-1',
+      Body: 'invalid',
+    };
+
+    mockSend.mockResolvedValueOnce({ Messages: [mockMessage] });
+    mockSend.mockResolvedValueOnce({ Successful: [{ Id: '0' }], Failed: [] });
+    mockSend.mockResolvedValue({ Messages: [] });
+    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'fail', reason: 'Invalid JSON' });
+
+    await consumer.start();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await consumer.stop();
+
+    expect(mockSpan.setStatus).toHaveBeenCalledWith({
+      code: 2, // SpanStatusCode.ERROR = 2
+      message: 'Invalid JSON',
+    });
+    expect(mockSpan.recordException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Invalid JSON' })
+    );
+  });
+
+  it('should set span status ERROR on retry without recording exception', async () => {
+    const mockMessage = {
+      MessageId: 'msg-retry-trace-1',
+      ReceiptHandle: 'receipt-retry-trace-1',
+      Body: JSON.stringify({ data: 'test' }),
+    };
+
+    mockSend.mockResolvedValueOnce({ Messages: [mockMessage] });
+    mockSend.mockResolvedValue({ Messages: [] });
+    mockHandler.handle = vi.fn().mockResolvedValue({ status: 'retry', reason: 'DB unavailable' });
+
+    await consumer.start();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await consumer.stop();
+
+    expect(mockSpan.setStatus).toHaveBeenCalledWith({
+      code: 2, // SpanStatusCode.ERROR = 2
+      message: 'DB unavailable',
+    });
+    expect(mockSpan.recordException).not.toHaveBeenCalled();
+  });
+});

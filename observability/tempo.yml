@@ -18,8 +18,25 @@ storage:
     wal:
       path: /var/tempo/wal
 
+metrics_generator:
+  processor:
+    service_graphs:
+      dimensions:
+        - service.name
+    span_metrics:
+      dimensions:
+        - service.name
+        - http.method
+        - http.status_code
+  storage:
+    path: /var/tempo/generator/wal
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+
 overrides:
   defaults:
     metrics_generator:
-      processors: []
+      processors:
+        - service-graphs
+        - span-metrics
 
