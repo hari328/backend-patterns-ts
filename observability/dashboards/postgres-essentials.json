@@ -1,0 +1,56 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "id": 1, "title": "⚡ Health at a Glance", "type": "row" },
+
+    { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "mappings": [{ "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } }, "type": "value" }], "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }, "overrides": [] }, "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 }, "id": 2, "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" }, "title": "Status", "type": "stat", "targets": [{ "expr": "pg_up", "refId": "A" }] },
+
+    { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.7 }, { "color": "red", "value": 0.9 }] } }, "overrides": [] }, "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 }, "id": 3, "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" }, "title": "Connection Usage %", "type": "stat", "targets": [{ "expr": "sum(pg_stat_activity_count) / pg_settings_max_connections", "refId": "A" }] },
+
+    { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.9 }, { "color": "green", "value": 0.95 }] } }, "overrides": [] }, "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 }, "id": 4, "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" }, "title": "Cache Hit Ratio", "type": "stat", "targets": [{ "expr": "pg_stat_database_blks_hit{datname=\"social_media_db\"} / (pg_stat_database_blks_hit{datname=\"social_media_db\"} + pg_stat_database_blks_read{datname=\"social_media_db\"})", "refId": "A" }] },
+
+    { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] } }, "overrides": [] }, "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 }, "id": 5, "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" }, "title": "Idle in Transaction", "type": "stat", "targets": [{ "expr": "pg_stat_activity_count{state=\"idle in transaction\"}", "refId": "A" }] },
+
+    { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.1 }] } }, "overrides": [] }, "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 }, "id": 6, "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" }, "title": "Deadlocks/s", "type": "stat", "targets": [{ "expr": "rate(pg_stat_database_deadlocks{datname=\"social_media_db\"}[5m])", "refId": "A" }] },
+
+    { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 10000 }, { "color": "red", "value": 100000 }] } }, "overrides": [] }, "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 }, "id": 7, "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" }, "title": "Dead Tuples", "type": "stat", "targets": [{ "expr": "sum(pg_stat_user_tables_n_dead_tup)", "refId": "A" }] },
+
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }, "id": 8, "title": "🔌 Connections", "type": "row" },
+
+    { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10, "stacking": { "mode": "normal" } } }, "overrides": [] }, "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 }, "id": 9, "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } }, "title": "Connections by State", "type": "timeseries", "targets": [{ "expr": "pg_stat_activity_count", "legendFormat": "{{state}}", "refId": "A" }] },
+
+    { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] }, "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 }, "id": 10, "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }, "title": "Connection Usage % Over Time", "type": "timeseries", "targets": [{ "expr": "sum(pg_stat_activity_count) / pg_settings_max_connections", "legendFormat": "usage %", "refId": "A" }] },
+
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }, "id": 11, "title": "🔍 Query Patterns", "type": "row" },
+
+    { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] }, "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 }, "id": 12, "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } }, "title": "Seq Scans vs Index Scans/s", "type": "timeseries", "targets": [{ "expr": "sum(rate(pg_stat_user_tables_seq_scan[5m]))", "legendFormat": "seq scans/s", "refId": "A" }, { "expr": "sum(rate(pg_stat_user_tables_idx_scan[5m]))", "legendFormat": "index scans/s", "refId": "B" }] },
+
+    { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] }, "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 }, "id": 13, "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }, "title": "Commits vs Rollbacks/s", "type": "timeseries", "targets": [{ "expr": "rate(pg_stat_database_xact_commit{datname=\"social_media_db\"}[5m])", "legendFormat": "commits/s", "refId": "A" }, { "expr": "rate(pg_stat_database_xact_rollback{datname=\"social_media_db\"}[5m])", "legendFormat": "rollbacks/s", "refId": "B" }] },
+
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 }, "id": 14, "title": "⚠️ Saturation", "type": "row" },
+
+    { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 50 } }, "overrides": [] }, "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 }, "id": 15, "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } }, "title": "Dead Tuples by Table (top 5)", "type": "timeseries", "targets": [{ "expr": "topk(5, pg_stat_user_tables_n_dead_tup)", "legendFormat": "{{relname}}", "refId": "A" }] },
+
+    { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] }, "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 }, "id": 16, "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } }, "title": "Locks by Mode", "type": "timeseries", "targets": [{ "expr": "pg_locks_count", "legendFormat": "{{mode}}", "refId": "A" }] },
+
+    { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] }, "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 }, "id": 17, "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }, "title": "Temp Bytes/s (disk spills)", "type": "timeseries", "targets": [{ "expr": "rate(pg_stat_database_temp_bytes{datname=\"social_media_db\"}[5m])", "legendFormat": "temp bytes/s", "refId": "A" }] },
+
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 }, "id": 18, "title": "⚙️ Background Processes", "type": "row" },
+
+    { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] }, "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 }, "id": 19, "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } }, "title": "Checkpoints — timed (normal) vs forced", "type": "timeseries", "targets": [{ "expr": "rate(pg_stat_bgwriter_checkpoints_timed[5m])", "legendFormat": "timed (normal)", "refId": "A" }, { "expr": "rate(pg_stat_bgwriter_checkpoints_req[5m])", "legendFormat": "forced (bad)", "refId": "B" }] },
+
+    { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] }, "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 }, "id": 20, "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }, "title": "Cache Hit Ratio Over Time", "type": "timeseries", "targets": [{ "expr": "pg_stat_database_blks_hit{datname=\"social_media_db\"} / (pg_stat_database_blks_hit{datname=\"social_media_db\"} + pg_stat_database_blks_read{datname=\"social_media_db\"})", "legendFormat": "hit ratio", "refId": "A" }] }
+  ],
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      { "current": { "selected": false, "text": "Prometheus", "value": "prometheus" }, "hide": 0, "includeAll": false, "name": "datasource", "options": [], "query": "prometheus", "refresh": 1, "type": "datasource" }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "PostgreSQL — Essentials",
+  "uid": "postgresql-essentials"
+}

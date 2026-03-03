@@ -1,4 +1,5 @@
-export { db, schema, type Database } from './client';
+export { db, schema, type Database, DB_POOL_MAX } from './client';
+export { registerPoolMetrics } from './pool-metrics';
 
 export { users } from './schema/users';
 export { posts } from './schema/posts';

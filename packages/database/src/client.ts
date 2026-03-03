@@ -19,8 +19,10 @@ function getDatabaseConfig() {
 
 const connectionString = getDatabaseConfig();
 
+export const DB_POOL_MAX = parseInt(process.env.DB_POOL_MAX || '10');
+
 const client = postgres(connectionString, {
-  max: parseInt(process.env.DB_POOL_MAX || '10'),
+  max: DB_POOL_MAX,
   idle_timeout: parseInt(process.env.DB_IDLE_TIMEOUT || '20'),
   connect_timeout: parseInt(process.env.DB_CONNECT_TIMEOUT || '10'),
 });

@@ -4,6 +4,7 @@ import {
   SpanKind,
   SpanStatusCode,
 } from '@opentelemetry/api';
+import { incrementActive, decrementActive } from './pool-metrics';
 
 const TRACER_NAME = 'drizzle-orm';
 const INSTRUMENTED_FLAG = '__dbInstrumented';
@@ -32,9 +33,12 @@ export function instrumentDb(db: { session?: any; _?: any }): void {
       const originalExecute = prepared.execute;
 
       prepared.execute = function (...executeArgs: any[]) {
+        incrementActive();
+
         const parentSpan = trace.getSpan(context.active());
         if (!parentSpan) {
-          return originalExecute.apply(this, executeArgs);
+          return Promise.resolve(originalExecute.apply(this, executeArgs))
+            .finally(() => decrementActive());
         }
 
         const queryText: string | undefined =
@@ -76,8 +80,10 @@ export function instrumentDb(db: { session?: any; _?: any }): void {
                 span.recordException(error);
                 span.end();
                 throw error;
-              });
+              })
+              .finally(() => decrementActive());
           } catch (error: any) {
+            decrementActive();
             span.setStatus({
               code: SpanStatusCode.ERROR,
               message: error.message,
@@ -95,4 +101,3 @@ export function instrumentDb(db: { session?: any; _?: any }): void {
 
   session[INSTRUMENTED_FLAG] = true;
 }
-
